@@ -1,0 +1,163 @@
+﻿1. User Authentication
+* Login
+* Forgot Password
+* User Profile
+________________
+
+
+2. Notice & Circular
+* Committee can post notices/circulars.
+* Residents can view all notices.
+* Push notification for new notices.
+________________
+
+
+3. Monthly Expense Management
+Committee / Treasurer
+* Add monthly expenses.
+* Expense categories:
+   * Guard Salary
+   * Cleaner Salary
+   * Manager Salary
+   * Generator Expense
+   * Lift Maintenance
+   * Electricity Bill
+   * WASA Bill
+   * Other Expenses
+Residents
+* View monthly expense summary.
+* View expense breakdown by category.
+
+
+
+
+________________
+
+
+4. Amenity Booking
+Residents can book facilities such as:
+* Guest Parking
+* Swimming Pool
+* Community Hall
+* Table Tennis
+* Billiard Room
+Features:
+* View available time slots.
+* Book a slot.
+* Prevent double booking.
+________________
+
+
+5. Marketplace
+Residents can create listings.
+Each listing includes:
+* Item title
+* Description
+* Price
+* Images
+* Seller contact information
+Residents can:
+* Browse listings.
+* View listing details.
+* Contact seller.
+________________
+
+
+6. Election Voting
+Committee can:
+* Create elections.
+* Add candidates.
+* Set voting period.
+Residents can:
+* View candidates.
+* Cast one vote.
+* View results (if enabled).
+________________
+
+
+7. Smart Guest Approval
+Security Guard
+* Add visitor details.
+   * Name
+   * Phone Number
+   * Purpose
+* Send approval request to resident.
+* View resident approval status.
+Residents
+* Receive visitor notification.
+* Approve or deny visitor.
+* View guest history.
+* Pre-approve guests with QR Code / OTP.
+________________
+
+
+8. Emergency & Utility Directory
+Residents can view important contacts:
+* Fire Service
+* Police Station
+* Property Manager
+* Security Guard
+* Gas Supplier
+* Welfare Society / Help Desk
+Features:
+* One-tap calling.
+________________
+
+
+9. Complaint & Maintenance
+Residents can:
+* Create complaint tickets.
+* Select complaint category.
+* Upload images/videos.
+* Track complaint status.
+* View manager comments/updates.
+Manager can:
+* View complaints.
+* Update complaint status.
+* Reply with comments.
+________________
+
+
+User Roles
+Admin / Committee
+* Manage notices.
+* Manage expenses.
+* Manage amenity schedules.
+* Manage elections.
+* Manage complaints.
+* Manage emergency directory.
+Treasurer
+* Add and update monthly expenses.
+Security Guard
+* Register visitors.
+* Send guest approval requests.
+* View approval status.
+Resident
+* Read notices.
+* View expenses.
+* Book amenities.
+* Post marketplace listings.
+* Vote in elections.
+* Approve/Deny visitors.
+* View emergency directory.
+* Submit and track complaints.
+________________
+
+
+Platforms
+1. Resident Mobile App
+2. Security Guard Mobile App
+3. Admin / Manager Web Panel
+________________
+
+
+Summary Modules
+1. Authentication
+2. Notice & Circular
+3. Monthly Expense Management
+4. Amenity Booking
+5. Marketplace
+6. Election Voting
+7. Smart Guest Approval
+8. Emergency & Utility Directory
+9. Complaint & Maintenance Management
