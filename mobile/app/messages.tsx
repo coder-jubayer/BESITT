@@ -12,8 +12,9 @@ import {
   Linking,
   Image,
   Modal,
+  BackHandler,
 } from 'react-native';
-import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -92,6 +93,7 @@ function TabBadge({ count }: { count: number }) {
 
 export default function MessagesScreen() {
   const router = useRouter();
+  const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{
     tab?: string;
@@ -377,6 +379,49 @@ export default function MessagesScreen() {
     }
   };
 
+  const closeChat = useCallback(() => {
+    setChatKind(null);
+    setChatId(null);
+    setActiveGroup(null);
+    setMessages([]);
+    setDraft('');
+    setMenuOpen(false);
+    setMembersOpen(false);
+    setRenameOpen(false);
+    void loadLists();
+  }, [loadLists]);
+
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('beforeRemove', (event) => {
+      if (renameOpen || membersOpen || menuOpen) {
+        event.preventDefault();
+        setRenameOpen(false);
+        setMembersOpen(false);
+        setMenuOpen(false);
+        return;
+      }
+      if (!chatId) return;
+      event.preventDefault();
+      closeChat();
+    });
+    return unsubscribe;
+  }, [navigation, chatId, closeChat, renameOpen, membersOpen, menuOpen]);
+
+  useEffect(() => {
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (renameOpen || membersOpen || menuOpen) {
+        setRenameOpen(false);
+        setMembersOpen(false);
+        setMenuOpen(false);
+        return true;
+      }
+      if (!chatId) return false;
+      closeChat();
+      return true;
+    });
+    return () => sub.remove();
+  }, [chatId, closeChat, renameOpen, membersOpen, menuOpen]);
+
   const saveRename = async () => {
     if (!activeGroup || renameValue.trim().length < 2) {
       showToast('Enter a group name');
@@ -401,17 +446,7 @@ export default function MessagesScreen() {
     return (
       <KeyboardAvoidingView style={styles.root} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <View style={[styles.chatHeader, { paddingTop: insets.top + spacing.sm }]}>
-          <Pressable
-            onPress={() => {
-              setChatKind(null);
-              setChatId(null);
-              setActiveGroup(null);
-              setMessages([]);
-              setDraft('');
-              void loadLists();
-            }}
-            style={styles.back}
-          >
+          <Pressable onPress={closeChat} style={styles.back}>
             <Ionicons name="arrow-back" size={22} color={colors.slate800} />
           </Pressable>
           {chatImage ? (
