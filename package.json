@@ -1,0 +1,13 @@
+{
+  "name": "building-management",
+  "private": true,
+  "description": "Building Management System — monorepo",
+  "scripts": {
+    "server:dev": "npm run dev --prefix server",
+    "server:build": "npm run build --prefix server",
+    "mobile:start": "npm start --prefix mobile",
+    "mobile:android": "npm run android --prefix mobile",
+    "mobile:ios": "npm run ios --prefix mobile",
+    "mobile:lint": "npm run lint --prefix mobile"
+  }
+}

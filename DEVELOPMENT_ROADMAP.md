@@ -444,29 +444,20 @@ Phase 10–12: Polish → QA → Store
 
 ## 7. Role-Based Access Plan
 
-| Feature | Resident | Guard | Treasurer | Committee | Manager |
-|---------|:--------:|:-----:|:---------:|:---------:|:-------:|
-| Login / Profile | ✅ | ✅ | ✅ | ✅ | ✅ |
-| View notices | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Post notices | ❌ | ❌ | ❌ | ✅ | ✅ |
-| View expenses | ✅ | ❌ | ✅ | ✅ | ✅ |
-| Add expenses | ❌ | ❌ | ✅ | ✅ | ❌ |
-| Book amenities | ✅ | ❌ | ❌ | ✅ | ❌ |
-| Marketplace | ✅ | ❌ | ❌ | ❌ | ❌ |
-| Vote | ✅ | ❌ | ❌ | ❌ | ❌ |
-| Manage elections | ❌ | ❌ | ❌ | ✅ | ❌ |
-| Register visitors | ❌ | ✅ | ❌ | ❌ | ❌ |
-| Approve visitors | ✅ | ❌ | ❌ | ❌ | ❌ |
-| Emergency directory | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Manage directory | ❌ | ❌ | ❌ | ✅ | ✅ |
-| Submit complaints | ✅ | ❌ | ❌ | ❌ | ❌ |
-| Manage complaints | ❌ | ❌ | ❌ | ✅ | ✅ |
+| Role | Scope | Sign up | Can create accounts |
+|------|--------|:-------:|---------------------|
+| App Admin | Whole app (`admin@bm.com`) | ❌ (seeded) | Building Admin, Committee, Resident, Security Guard |
+| Building Admin | One building / community | ✅ public sign up | Committee, Resident, Security Guard only |
+| Committee | One building | ❌ | — |
+| Security Guard | One building | ❌ | — |
+| Resident | One building | ❌ | — |
+
+All roles sign in on the same login screen. Only Building Admin can self-register.
 
 Implement via:
-1. **Firestore security rules** (authoritative)
-** server)
-2. **Client-side navigation guards** (hide unauthorized UI)
-3. **Custom claims** on Firebase Auth tokens for role (optional, recommended at scale)
+1. **JWT + Express RBAC** (authoritative on the API)
+2. **Building-scoped queries** (`buildingId` on users)
+3. **Client-side UI guards** (hide unauthorized actions)
 
 ---
 
@@ -634,7 +625,7 @@ Live on stores
 
 Use this as the living tracker when we build:
 
-- [ ] **Phase 0** — Foundation & tooling
+- [x] **Phase 0** — Foundation & tooling
 - [ ] **Phase 1** — Authentication & profile
 - [ ] **Phase 2** — Notice & circular
 - [ ] **Phase 3** — Monthly expenses

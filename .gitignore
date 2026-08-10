@@ -27,8 +27,11 @@ android/
 *.aab
 *.ipa
 
-# Server uploads (user-generated content)
-server/uploads/
+# Server
+server/dist/
+server/node_modules/
+server/uploads/*
+!server/uploads/.gitkeep
 
 # Logs & debug
 logs/
