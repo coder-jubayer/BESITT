@@ -24,6 +24,7 @@ export interface IInboxThreadDocument extends IInboxThread, Document {
     otherRole: string;
     lastMessage?: string;
     lastMessageAt?: string;
+    updatedAt?: string;
     unread: number;
   };
 }
@@ -58,7 +59,8 @@ inboxThreadSchema.methods.toSafeJSON = function toSafeJSON(actorId: string) {
     otherRole: isA ? this.userBRole : this.userARole,
     lastMessage: this.lastMessage,
     lastMessageAt: this.lastMessageAt ? this.lastMessageAt.toISOString() : undefined,
-    unread: isA ? this.userAUnread : this.userBUnread,
+    updatedAt: this.updatedAt ? this.updatedAt.toISOString() : undefined,
+    unread: (isA ? this.userAUnread : this.userBUnread) > 0 ? 1 : 0,
   };
 };
 

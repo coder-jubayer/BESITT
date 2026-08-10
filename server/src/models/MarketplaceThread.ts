@@ -68,7 +68,7 @@ marketplaceThreadSchema.methods.toSafeJSON = function toSafeJSON(actorId: string
     otherName: isSeller ? this.buyerName : this.sellerName,
     lastMessage: this.lastMessage,
     lastMessageAt: this.lastMessageAt ? this.lastMessageAt.toISOString() : undefined,
-    unread: isSeller ? this.sellerUnread : this.buyerUnread,
+    unread: (isSeller ? this.sellerUnread : this.buyerUnread) > 0 ? 1 : 0,
     isSeller,
   };
 };

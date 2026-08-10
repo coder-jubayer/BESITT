@@ -11,37 +11,43 @@ import {
   RefreshControl,
   Linking,
   Image,
+  Modal,
 } from 'react-native';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, spacing, borderRadius, shadows } from '../src/theme';
+import { Button, Input } from '../src/components/ui';
 import {
   contactSeller,
   fetchMarketplaceChats,
   fetchMarketplaceThread,
   sendMarketplaceMessage,
 } from '../src/services/marketplace.service';
-import { fetchInboxDirectory, fetchInboxThread, openInboxThread, sendInboxMessage } from '../src/services/inbox.service';
+import {
+  fetchInboxGroup,
+  fetchInboxGroups,
+  fetchInboxThread,
+  fetchInboxThreads,
+  openInboxThread,
+  renameInboxGroup,
+  sendInboxGroupMessage,
+  sendInboxMessage,
+} from '../src/services/inbox.service';
 import { formatChatTime } from '../src/utils/date';
 import {
-  InboxCategory,
   InboxChatMessage,
-  InboxContact,
+  InboxGroup,
+  InboxGroupMessage,
+  InboxThread,
   MarketplaceChatMessage,
   MarketplaceThread,
   ROLE_LABELS,
   UserRole,
 } from '../src/types';
 
-type TabKey = 'marketplace' | 'inbox';
+type TabKey = 'marketplace' | 'inbox' | 'groups';
 type ChatKind = TabKey;
-
-const CATEGORIES: Array<{ value: InboxCategory; label: string; icon: keyof typeof Ionicons.glyphMap }> = [
-  { value: 'committee', label: 'Committee', icon: 'people' },
-  { value: 'resident', label: 'Resident', icon: 'home' },
-  { value: 'guard', label: 'Security Guard', icon: 'shield-checkmark' },
-];
 
 function firstParam(value?: string | string[]): string {
   if (!value) return '';
@@ -51,6 +57,15 @@ function firstParam(value?: string | string[]): string {
 function roleLabel(role?: string) {
   if (!role) return '';
   return ROLE_LABELS[role as UserRole] ?? role.replace(/_/g, ' ');
+}
+
+function recency(item: { lastMessageAt?: string; updatedAt?: string }) {
+  const iso = item.lastMessageAt || item.updatedAt;
+  return iso ? new Date(iso).getTime() : 0;
+}
+
+function sortByRecency<T extends { lastMessageAt?: string; updatedAt?: string }>(items: T[]) {
+  return [...items].sort((a, b) => recency(b) - recency(a));
 }
 
 function SeenTicks({ seen }: { seen?: boolean }) {
@@ -64,22 +79,37 @@ function SeenTicks({ seen }: { seen?: boolean }) {
   );
 }
 
+function TabBadge({ count }: { count: number }) {
+  if (!count) return null;
+  return (
+    <View style={styles.tabBadge}>
+      <Text style={styles.tabBadgeText}>{count > 9 ? '9+' : count}</Text>
+    </View>
+  );
+}
+
 export default function MessagesScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const params = useLocalSearchParams<{ tab?: string; listingId?: string; userId?: string; threadId?: string }>();
+  const params = useLocalSearchParams<{
+    tab?: string;
+    listingId?: string;
+    userId?: string;
+    threadId?: string;
+    groupId?: string;
+  }>();
   const scrollRef = useRef<ScrollView>(null);
   const openedKey = useRef('');
 
-  const [tab, setTab] = useState<TabKey>(firstParam(params.tab) === 'marketplace' ? 'marketplace' : 'inbox');
-  const [search, setSearch] = useState('');
-  const [category, setCategory] = useState<InboxCategory>('committee');
+  const initialTab = firstParam(params.tab);
+  const [tab, setTab] = useState<TabKey>(
+    initialTab === 'marketplace' || initialTab === 'groups' ? initialTab : 'inbox',
+  );
+  const [marketSearch, setMarketSearch] = useState('');
+  const [groupSearch, setGroupSearch] = useState('');
   const [marketThreads, setMarketThreads] = useState<MarketplaceThread[]>([]);
-  const [contacts, setContacts] = useState<Record<InboxCategory, InboxContact[]>>({
-    committee: [],
-    resident: [],
-    guard: [],
-  });
+  const [inboxThreads, setInboxThreads] = useState<InboxThread[]>([]);
+  const [groups, setGroups] = useState<InboxGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -91,9 +121,13 @@ export default function MessagesScreen() {
   const [chatSubtitle, setChatSubtitle] = useState('');
   const [chatImage, setChatImage] = useState<string | undefined>();
   const [chatPhone, setChatPhone] = useState<string | undefined>();
-  const [messages, setMessages] = useState<Array<MarketplaceChatMessage | InboxChatMessage>>([]);
+  const [activeGroup, setActiveGroup] = useState<InboxGroup | null>(null);
+  const [messages, setMessages] = useState<Array<MarketplaceChatMessage | InboxChatMessage | InboxGroupMessage>>([]);
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
+  const [renameOpen, setRenameOpen] = useState(false);
+  const [renameValue, setRenameValue] = useState('');
+  const [renaming, setRenaming] = useState(false);
 
   const showToast = (message: string) => {
     setToast(message);
@@ -103,9 +137,14 @@ export default function MessagesScreen() {
   const loadLists = useCallback(async () => {
     setError(null);
     try {
-      const [threads, directory] = await Promise.all([fetchMarketplaceChats(), fetchInboxDirectory()]);
-      setMarketThreads(threads);
-      setContacts(directory.contacts);
+      const [market, inbox, groupList] = await Promise.all([
+        fetchMarketplaceChats(),
+        fetchInboxThreads(),
+        fetchInboxGroups(),
+      ]);
+      setMarketThreads(sortByRecency(market));
+      setInboxThreads(sortByRecency(inbox));
+      setGroups(sortByRecency(groupList));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load messages');
     } finally {
@@ -114,35 +153,44 @@ export default function MessagesScreen() {
     }
   }, []);
 
-  const applyMarketThread = (
-    thread: MarketplaceThread,
-    nextMessages: MarketplaceChatMessage[],
-  ) => {
+  const applyMarketThread = (thread: MarketplaceThread, nextMessages: MarketplaceChatMessage[]) => {
     setChatKind('marketplace');
     setChatId(thread.id);
+    setActiveGroup(null);
     setChatTitle(thread.listingTitle);
     setChatSubtitle(thread.isSeller ? `Buyer · ${thread.otherName}` : `Seller · ${thread.otherName}`);
     setChatImage(thread.listingImage);
     setChatPhone(undefined);
     setMessages(nextMessages);
-    setMarketThreads((current) => {
-      const rest = current.filter((item) => item.id !== thread.id);
-      return [thread, ...rest];
-    });
+    setMarketThreads((current) => sortByRecency([thread, ...current.filter((item) => item.id !== thread.id)]));
   };
 
   const applyInboxThread = (
-    thread: { id: string; otherName: string; otherRole: string },
+    thread: InboxThread,
     nextMessages: InboxChatMessage[],
     phone?: string,
   ) => {
     setChatKind('inbox');
     setChatId(thread.id);
+    setActiveGroup(null);
     setChatTitle(thread.otherName);
     setChatSubtitle(roleLabel(thread.otherRole));
     setChatImage(undefined);
     setChatPhone(phone);
     setMessages(nextMessages);
+    setInboxThreads((current) => sortByRecency([{ ...thread, unread: 0 }, ...current.filter((item) => item.id !== thread.id)]));
+  };
+
+  const applyGroup = (group: InboxGroup, nextMessages: InboxGroupMessage[]) => {
+    setChatKind('groups');
+    setChatId(group.id);
+    setActiveGroup(group);
+    setChatTitle(group.name);
+    setChatSubtitle(`${group.memberCount} members`);
+    setChatImage(undefined);
+    setChatPhone(undefined);
+    setMessages(nextMessages);
+    setGroups((current) => sortByRecency([{ ...group, unread: 0 }, ...current.filter((item) => item.id !== group.id)]));
   };
 
   const openMarketChat = async (threadId: string, silent = false) => {
@@ -183,30 +231,43 @@ export default function MessagesScreen() {
     }
   };
 
+  const openGroupChat = async (groupId: string, silent = false) => {
+    try {
+      setTab('groups');
+      const detail = await fetchInboxGroup(groupId);
+      applyGroup(detail.group, detail.messages);
+    } catch (err) {
+      if (!silent) showToast(err instanceof Error ? err.message : 'Failed to open group');
+    }
+  };
+
   useFocusEffect(
     useCallback(() => {
       void loadLists();
       const listingId = firstParam(params.listingId);
       const userId = firstParam(params.userId);
       const threadId = firstParam(params.threadId);
+      const groupId = firstParam(params.groupId);
       const nextTab = firstParam(params.tab);
-      if (nextTab === 'marketplace' || nextTab === 'inbox') setTab(nextTab);
-      const key = `${nextTab}|${listingId}|${userId}|${threadId}`;
-      if (!listingId && !userId && !threadId) return;
+      if (nextTab === 'marketplace' || nextTab === 'inbox' || nextTab === 'groups') setTab(nextTab);
+      const key = `${nextTab}|${listingId}|${userId}|${threadId}|${groupId}`;
+      if (!listingId && !userId && !threadId && !groupId) return;
       if (openedKey.current === key) return;
       openedKey.current = key;
       if (listingId) void openListingChat(listingId);
       else if (userId) void openUserChat(userId);
+      else if (groupId) void openGroupChat(groupId);
       else if (threadId && nextTab === 'marketplace') void openMarketChat(threadId);
       else if (threadId) void openInboxChat(threadId);
-    }, [loadLists, params.listingId, params.userId, params.threadId, params.tab]),
+    }, [loadLists, params.listingId, params.userId, params.threadId, params.groupId, params.tab]),
   );
 
   useEffect(() => {
     if (!chatId || !chatKind) return;
     const timer = setInterval(() => {
       if (chatKind === 'marketplace') void openMarketChat(chatId, true);
-      else void openInboxChat(chatId, chatPhone, true);
+      else if (chatKind === 'inbox') void openInboxChat(chatId, chatPhone, true);
+      else void openGroupChat(chatId, true);
     }, 4000);
     return () => clearInterval(timer);
   }, [chatId, chatKind, chatPhone]);
@@ -215,27 +276,24 @@ export default function MessagesScreen() {
     requestAnimationFrame(() => scrollRef.current?.scrollToEnd({ animated: true }));
   }, [messages.length, chatId]);
 
+  const marketUnread = marketThreads.filter((item) => item.unread > 0).length;
+  const inboxUnread = inboxThreads.filter((item) => item.unread > 0).length;
+  const groupUnread = groups.filter((item) => item.unread > 0).length;
+
   const filteredMarket = useMemo(() => {
-    const q = search.trim().toLowerCase();
+    const q = marketSearch.trim().toLowerCase();
     if (!q) return marketThreads;
     return marketThreads.filter(
       (thread) =>
         thread.listingTitle.toLowerCase().includes(q) || thread.otherName.toLowerCase().includes(q),
     );
-  }, [marketThreads, search]);
+  }, [marketThreads, marketSearch]);
 
-  const filteredContacts = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    const list = contacts[category] ?? [];
-    if (!q) return list;
-    return list.filter((person) =>
-      [person.name, person.roleLabel, person.phone, person.unitNumber, person.email]
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase()
-        .includes(q),
-    );
-  }, [contacts, category, search]);
+  const filteredGroups = useMemo(() => {
+    const q = groupSearch.trim().toLowerCase();
+    if (!q) return groups;
+    return groups.filter((group) => group.name.toLowerCase().includes(q));
+  }, [groups, groupSearch]);
 
   const handleSend = async () => {
     if (!chatId || !chatKind || !draft.trim() || sending) return;
@@ -246,13 +304,23 @@ export default function MessagesScreen() {
       if (chatKind === 'marketplace') {
         const result = await sendMarketplaceMessage(chatId, text);
         setMessages((current) => [...current, result.message]);
-        setMarketThreads((current) => {
-          const rest = current.filter((item) => item.id !== result.thread.id);
-          return [result.thread, ...rest];
-        });
-      } else {
+        setMarketThreads((current) =>
+          sortByRecency([result.thread, ...current.filter((item) => item.id !== result.thread.id)]),
+        );
+      } else if (chatKind === 'inbox') {
         const result = await sendInboxMessage(chatId, text);
         setMessages((current) => [...current, result.message]);
+        setInboxThreads((current) =>
+          sortByRecency([result.thread, ...current.filter((item) => item.id !== result.thread.id)]),
+        );
+      } else {
+        const result = await sendInboxGroupMessage(chatId, text);
+        setMessages((current) => [...current, result.message]);
+        setActiveGroup(result.group);
+        setChatTitle(result.group.name);
+        setGroups((current) =>
+          sortByRecency([result.group, ...current.filter((item) => item.id !== result.group.id)]),
+        );
       }
     } catch (err) {
       setDraft(text);
@@ -271,17 +339,35 @@ export default function MessagesScreen() {
     }
   };
 
+  const saveRename = async () => {
+    if (!activeGroup || renameValue.trim().length < 2) {
+      showToast('Enter a group name');
+      return;
+    }
+    setRenaming(true);
+    try {
+      const group = await renameInboxGroup(activeGroup.id, renameValue.trim());
+      setActiveGroup(group);
+      setChatTitle(group.name);
+      setGroups((current) => current.map((item) => (item.id === group.id ? group : item)));
+      setRenameOpen(false);
+      showToast('Group renamed');
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Failed to rename');
+    } finally {
+      setRenaming(false);
+    }
+  };
+
   if (chatKind && chatId) {
     return (
-      <KeyboardAvoidingView
-        style={styles.root}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
+      <KeyboardAvoidingView style={styles.root} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <View style={[styles.chatHeader, { paddingTop: insets.top + spacing.sm }]}>
           <Pressable
             onPress={() => {
               setChatKind(null);
               setChatId(null);
+              setActiveGroup(null);
               setMessages([]);
               setDraft('');
               void loadLists();
@@ -294,35 +380,62 @@ export default function MessagesScreen() {
             <Image source={{ uri: chatImage }} style={styles.chatListingImage} />
           ) : (
             <View style={styles.chatAvatar}>
-              <Ionicons name={chatKind === 'marketplace' ? 'storefront' : 'person'} size={18} color={colors.primary} />
+              <Ionicons
+                name={chatKind === 'marketplace' ? 'storefront' : chatKind === 'groups' ? 'people' : 'person'}
+                size={18}
+                color={colors.primary}
+              />
             </View>
           )}
-          <View style={{ flex: 1 }}>
+          <Pressable
+            style={{ flex: 1 }}
+            onPress={() => {
+              if (chatKind !== 'groups' || !activeGroup) return;
+              setRenameValue(activeGroup.name);
+              setRenameOpen(true);
+            }}
+          >
             <Text style={styles.chatName} numberOfLines={1}>
               {chatTitle}
             </Text>
             <Text style={styles.chatRole} numberOfLines={1}>
-              {chatSubtitle}
+              {chatKind === 'groups' ? `${chatSubtitle} · tap to rename` : chatSubtitle}
             </Text>
-          </View>
+          </Pressable>
+          {chatKind === 'groups' && activeGroup ? (
+            <Pressable
+              style={styles.headerCall}
+              onPress={() =>
+                router.push({
+                  pathname: '/messages-contacts',
+                  params: { mode: 'group-members', groupId: activeGroup.id },
+                })
+              }
+            >
+              <Ionicons name="person-add" size={18} color={colors.primary} />
+            </Pressable>
+          ) : null}
           {chatPhone ? (
             <Pressable style={styles.headerCall} onPress={() => void callNumber(chatPhone)}>
               <Ionicons name="call" size={18} color={colors.primary} />
             </Pressable>
           ) : null}
         </View>
-        <ScrollView
-          ref={scrollRef}
-          contentContainerStyle={styles.messages}
-          showsVerticalScrollIndicator={false}
-        >
+        <ScrollView ref={scrollRef} contentContainerStyle={styles.messages} showsVerticalScrollIndicator={false}>
           {!messages.length ? (
             <Text style={styles.emptyChat}>
-              {chatKind === 'marketplace' ? 'Say hello about this listing.' : 'Start the conversation.'}
+              {chatKind === 'marketplace'
+                ? 'Say hello about this listing.'
+                : chatKind === 'groups'
+                  ? 'Start the group conversation.'
+                  : 'Start the conversation.'}
             </Text>
           ) : null}
           {messages.map((item) => (
             <View key={item.id} style={item.mine ? styles.bubbleRight : styles.bubbleLeft}>
+              {chatKind === 'groups' && !item.mine ? (
+                <Text style={styles.senderName}>{item.senderName}</Text>
+              ) : null}
               <Text style={item.mine ? styles.bubbleRightText : styles.bubbleLeftText}>{item.text}</Text>
               <View style={styles.metaRow}>
                 <Text style={item.mine ? styles.timeRight : styles.timeLeft}>{formatChatTime(item.createdAt)}</Text>
@@ -344,6 +457,17 @@ export default function MessagesScreen() {
             <Ionicons name="send" size={18} color={colors.white} />
           </Pressable>
         </View>
+        <Modal visible={renameOpen} animationType="fade" transparent onRequestClose={() => setRenameOpen(false)}>
+          <View style={styles.modalWrap}>
+            <Pressable style={styles.backdrop} onPress={() => setRenameOpen(false)} />
+            <View style={styles.sheet}>
+              <Text style={styles.sheetTitle}>Rename group</Text>
+              <Input value={renameValue} onChangeText={setRenameValue} placeholder="Group name" />
+              <Button title="Save" loading={renaming} onPress={() => void saveRename()} />
+              <Button title="Cancel" variant="ghost" onPress={() => setRenameOpen(false)} />
+            </View>
+          </View>
+        </Modal>
         {toast ? (
           <View style={[styles.toast, { bottom: insets.bottom + 88 }]}>
             <Text style={styles.toastText}>{toast}</Text>
@@ -360,44 +484,58 @@ export default function MessagesScreen() {
           <Pressable onPress={() => router.back()} style={styles.back}>
             <Ionicons name="arrow-back" size={22} color={colors.slate800} />
           </Pressable>
-          <Text style={styles.title}>{tab === 'marketplace' ? 'Marketplace' : 'Inbox'}</Text>
+          <Text style={styles.title}>
+            {tab === 'marketplace' ? 'Marketplace' : tab === 'groups' ? 'Groups' : 'Inbox'}
+          </Text>
+          {tab === 'groups' ? (
+            <Pressable
+              style={styles.headerAdd}
+              onPress={() => router.push({ pathname: '/messages-contacts', params: { mode: 'group' } })}
+            >
+              <Ionicons name="add" size={22} color={colors.white} />
+            </Pressable>
+          ) : null}
+          {tab === 'inbox' ? (
+            <Pressable
+              style={styles.headerAdd}
+              onPress={() => router.push({ pathname: '/messages-contacts', params: { mode: 'inbox' } })}
+            >
+              <Ionicons name="person-add" size={18} color={colors.white} />
+            </Pressable>
+          ) : null}
         </View>
-        <View style={styles.searchWrap}>
-          <Ionicons name="search" size={18} color={colors.textMuted} style={styles.searchIcon} />
-          <TextInput
-            style={styles.search}
-            placeholder={
-              tab === 'marketplace' ? 'Search listings or sellers...' : 'Search committee, residents, guards...'
-            }
-            placeholderTextColor={colors.textMuted}
-            value={search}
-            onChangeText={setSearch}
-          />
-        </View>
+        {tab === 'marketplace' ? (
+          <View style={styles.searchWrap}>
+            <Ionicons name="search" size={18} color={colors.textMuted} style={styles.searchIcon} />
+            <TextInput
+              style={styles.search}
+              placeholder="Search listings or sellers..."
+              placeholderTextColor={colors.textMuted}
+              value={marketSearch}
+              onChangeText={setMarketSearch}
+            />
+          </View>
+        ) : null}
         {tab === 'inbox' ? (
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.categoryRow}
+          <Pressable
+            style={styles.searchWrap}
+            onPress={() => router.push({ pathname: '/messages-contacts', params: { mode: 'inbox' } })}
           >
-            {CATEGORIES.map((item) => {
-              const active = category === item.value;
-              const count = contacts[item.value]?.length ?? 0;
-              return (
-                <Pressable
-                  key={item.value}
-                  onPress={() => setCategory(item.value)}
-                  style={[styles.categoryChip, active && styles.categoryChipActive]}
-                >
-                  <Ionicons name={item.icon} size={14} color={active ? colors.white : colors.primary} />
-                  <Text style={[styles.categoryText, active && styles.categoryTextActive]}>{item.label}</Text>
-                  <View style={[styles.countPill, active && styles.countPillActive]}>
-                    <Text style={[styles.countText, active && styles.countTextActive]}>{count}</Text>
-                  </View>
-                </Pressable>
-              );
-            })}
-          </ScrollView>
+            <Ionicons name="search" size={18} color={colors.textMuted} style={styles.searchIcon} />
+            <Text style={styles.searchFake}>Search or add people...</Text>
+          </Pressable>
+        ) : null}
+        {tab === 'groups' ? (
+          <View style={styles.searchWrap}>
+            <Ionicons name="search" size={18} color={colors.textMuted} style={styles.searchIcon} />
+            <TextInput
+              style={styles.search}
+              placeholder="Search groups..."
+              placeholderTextColor={colors.textMuted}
+              value={groupSearch}
+              onChangeText={setGroupSearch}
+            />
+          </View>
         ) : null}
       </View>
 
@@ -414,13 +552,10 @@ export default function MessagesScreen() {
         }
       >
         {error ? <Text style={styles.error}>{error}</Text> : null}
-        {loading && tab === 'marketplace' && !marketThreads.length ? (
-          <Text style={styles.muted}>Loading marketplace chats…</Text>
-        ) : null}
-        {loading && tab === 'inbox' && !filteredContacts.length ? <Text style={styles.muted}>Loading people…</Text> : null}
 
         {tab === 'marketplace' ? (
           <>
+            {loading && !marketThreads.length ? <Text style={styles.muted}>Loading marketplace chats…</Text> : null}
             {!loading && !filteredMarket.length ? (
               <Text style={styles.muted}>No listing chats yet. Contact a seller from Marketplace.</Text>
             ) : null}
@@ -449,75 +584,81 @@ export default function MessagesScreen() {
                 </View>
                 {thread.unread > 0 ? (
                   <View style={styles.unread}>
-                    <Text style={styles.unreadText}>{thread.unread}</Text>
+                    <Text style={styles.unreadText}>1</Text>
                   </View>
                 ) : null}
               </Pressable>
             ))}
           </>
-        ) : (
+        ) : null}
+
+        {tab === 'inbox' ? (
           <>
-            {!loading && !filteredContacts.length ? (
-              <Text style={styles.muted}>No {CATEGORIES.find((item) => item.value === category)?.label.toLowerCase()} available.</Text>
+            {loading && !inboxThreads.length ? <Text style={styles.muted}>Loading inbox…</Text> : null}
+            {!loading && !inboxThreads.length ? (
+              <Text style={styles.muted}>No conversations yet. Tap search to add people.</Text>
             ) : null}
-            {filteredContacts.map((person) => (
-              <Pressable
-                key={person.id}
-                style={styles.personCard}
-                onPress={() => void openUserChat(person.id, person.phone)}
-              >
+            {inboxThreads.map((thread) => (
+              <Pressable key={thread.id} style={styles.chatRow} onPress={() => void openInboxChat(thread.id)}>
                 <View style={styles.rowAvatar}>
-                  <Ionicons
-                    name={category === 'guard' ? 'shield-checkmark' : category === 'committee' ? 'people' : 'person'}
-                    size={20}
-                    color={colors.primary}
-                  />
+                  <Text style={styles.rowInitial}>{(thread.otherName || 'U').trim().charAt(0).toUpperCase()}</Text>
                 </View>
                 <View style={{ flex: 1 }}>
                   <View style={styles.rowTop}>
-                    <Text style={styles.rowName}>{person.name}</Text>
-                    {person.lastMessageAt ? (
-                      <Text style={styles.rowTime}>{formatChatTime(person.lastMessageAt)}</Text>
-                    ) : null}
-                  </View>
-                  <Text style={styles.rowSub}>
-                    {person.roleLabel}
-                    {person.unitNumber ? ` · Apt ${person.unitNumber}` : ''}
-                  </Text>
-                  {person.phone ? <Text style={styles.rowPhone}>{person.phone}</Text> : null}
-                  {person.lastMessage ? (
-                    <Text style={styles.rowMsg} numberOfLines={1}>
-                      {person.lastMessage}
+                    <Text style={styles.rowName} numberOfLines={1}>
+                      {thread.otherName}
                     </Text>
-                  ) : (
-                    <Text style={styles.rowHint}>Tap to message</Text>
-                  )}
-                </View>
-                <View style={styles.personActions}>
-                  {person.unread ? (
-                    <View style={styles.unread}>
-                      <Text style={styles.unreadText}>{person.unread}</Text>
-                    </View>
-                  ) : null}
-                  {person.phone ? (
-                    <Pressable
-                      style={styles.miniCall}
-                      onPress={(event) => {
-                        event.stopPropagation();
-                        void callNumber(person.phone);
-                      }}
-                    >
-                      <Ionicons name="call" size={16} color={colors.primary} />
-                    </Pressable>
-                  ) : null}
-                  <View style={styles.miniChat}>
-                    <Ionicons name="chatbubble-ellipses" size={16} color={colors.white} />
+                    <Text style={styles.rowTime}>{formatChatTime(thread.lastMessageAt || thread.updatedAt)}</Text>
                   </View>
+                  <Text style={styles.rowSub}>{roleLabel(thread.otherRole)}</Text>
+                  <Text style={styles.rowMsg} numberOfLines={1}>
+                    {thread.lastMessage || 'Say hello'}
+                  </Text>
                 </View>
+                {thread.unread > 0 ? (
+                  <View style={styles.unread}>
+                    <Text style={styles.unreadText}>1</Text>
+                  </View>
+                ) : null}
               </Pressable>
             ))}
           </>
-        )}
+        ) : null}
+
+        {tab === 'groups' ? (
+          <>
+            {loading && !groups.length ? <Text style={styles.muted}>Loading groups…</Text> : null}
+            {!loading && !filteredGroups.length ? (
+              <Text style={styles.muted}>No groups yet. Tap + to create one.</Text>
+            ) : null}
+            {filteredGroups.map((group) => (
+              <Pressable key={group.id} style={styles.chatRow} onPress={() => void openGroupChat(group.id)}>
+                <View style={styles.rowAvatar}>
+                  <Ionicons name="people" size={20} color={colors.primary} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <View style={styles.rowTop}>
+                    <Text style={styles.rowName} numberOfLines={1}>
+                      {group.name}
+                    </Text>
+                    <Text style={styles.rowTime}>{formatChatTime(group.lastMessageAt || group.updatedAt)}</Text>
+                  </View>
+                  <Text style={styles.rowSub}>
+                    {group.memberCount} members{group.isOwner ? ' · You created this' : ''}
+                  </Text>
+                  <Text style={styles.rowMsg} numberOfLines={1}>
+                    {group.lastMessage || 'No messages yet'}
+                  </Text>
+                </View>
+                {group.unread > 0 ? (
+                  <View style={styles.unread}>
+                    <Text style={styles.unreadText}>1</Text>
+                  </View>
+                ) : null}
+              </Pressable>
+            ))}
+          </>
+        ) : null}
       </ScrollView>
 
       <View style={[styles.bottomSwitch, { paddingBottom: Math.max(insets.bottom, 10) }]}>
@@ -525,12 +666,28 @@ export default function MessagesScreen() {
           style={[styles.bottomTab, tab === 'marketplace' && styles.bottomTabActive]}
           onPress={() => setTab('marketplace')}
         >
-          <Ionicons name="storefront" size={20} color={tab === 'marketplace' ? colors.primary : colors.textMuted} />
+          <View>
+            <Ionicons name="storefront" size={20} color={tab === 'marketplace' ? colors.primary : colors.textMuted} />
+            <TabBadge count={marketUnread} />
+          </View>
           <Text style={[styles.bottomLabel, tab === 'marketplace' && styles.bottomLabelActive]}>Marketplace</Text>
         </Pressable>
         <Pressable style={[styles.bottomTab, tab === 'inbox' && styles.bottomTabActive]} onPress={() => setTab('inbox')}>
-          <Ionicons name="chatbubbles" size={20} color={tab === 'inbox' ? colors.primary : colors.textMuted} />
+          <View>
+            <Ionicons name="chatbubbles" size={20} color={tab === 'inbox' ? colors.primary : colors.textMuted} />
+            <TabBadge count={inboxUnread} />
+          </View>
           <Text style={[styles.bottomLabel, tab === 'inbox' && styles.bottomLabelActive]}>Inbox</Text>
+        </Pressable>
+        <Pressable
+          style={[styles.bottomTab, tab === 'groups' && styles.bottomTabActive]}
+          onPress={() => setTab('groups')}
+        >
+          <View>
+            <Ionicons name="people" size={20} color={tab === 'groups' ? colors.primary : colors.textMuted} />
+            <TabBadge count={groupUnread} />
+          </View>
+          <Text style={[styles.bottomLabel, tab === 'groups' && styles.bottomLabelActive]}>Groups</Text>
         </Pressable>
       </View>
 
@@ -556,7 +713,15 @@ const styles = StyleSheet.create({
   },
   listHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   back: { padding: 8, marginLeft: -8 },
-  title: { fontSize: 22, fontWeight: '700', color: colors.text },
+  title: { flex: 1, fontSize: 22, fontWeight: '700', color: colors.text },
+  headerAdd: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   searchWrap: { position: 'relative', justifyContent: 'center' },
   searchIcon: { position: 'absolute', left: 12, zIndex: 1 },
   search: {
@@ -568,45 +733,17 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.text,
   },
-  categoryRow: { gap: 8, paddingTop: 2 },
-  categoryChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: borderRadius.full,
-    backgroundColor: colors.primaryLight,
+  searchFake: {
+    backgroundColor: colors.slate100,
+    borderRadius: borderRadius.md,
+    paddingVertical: 12,
+    paddingLeft: 40,
+    paddingRight: 14,
+    fontSize: 14,
+    color: colors.textMuted,
   },
-  categoryChipActive: { backgroundColor: colors.primary },
-  categoryText: { fontWeight: '700', fontSize: 13, color: colors.primary },
-  categoryTextActive: { color: colors.white },
-  countPill: {
-    minWidth: 18,
-    height: 18,
-    borderRadius: 9,
-    backgroundColor: colors.white,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 5,
-  },
-  countPillActive: { backgroundColor: 'rgba(255,255,255,0.2)' },
-  countText: { fontSize: 10, fontWeight: '800', color: colors.primary },
-  countTextActive: { color: colors.white },
   list: { padding: spacing.md, gap: 4 },
   chatRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    backgroundColor: colors.surface,
-    padding: spacing.md,
-    borderRadius: borderRadius['2xl'],
-    marginBottom: 8,
-    borderWidth: 1,
-    borderColor: colors.border,
-    ...shadows.sm,
-  },
-  personCard: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
@@ -626,14 +763,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  rowInitial: { fontWeight: '800', color: colors.primary, fontSize: 18 },
   rowImage: { width: 48, height: 48, borderRadius: 14, backgroundColor: colors.slate100 },
   rowTop: { flexDirection: 'row', justifyContent: 'space-between', gap: 8 },
   rowName: { flex: 1, fontWeight: '700', color: colors.text },
   rowTime: { fontSize: 11, color: colors.textMuted },
   rowSub: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
-  rowPhone: { fontSize: 12, color: colors.text, marginTop: 2, fontWeight: '600' },
   rowMsg: { fontSize: 13, color: colors.textSecondary, marginTop: 2 },
-  rowHint: { fontSize: 12, color: colors.primary, marginTop: 2, fontWeight: '600' },
   unread: {
     minWidth: 20,
     height: 20,
@@ -644,26 +780,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
   },
   unreadText: { color: colors.white, fontSize: 11, fontWeight: '700' },
-  personActions: { alignItems: 'center', gap: 8 },
-  miniCall: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: colors.primaryLight,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  miniChat: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   muted: { color: colors.textSecondary, textAlign: 'center', marginTop: spacing.md, marginBottom: spacing.md },
   error: { color: colors.error, fontSize: 13, textAlign: 'center', marginBottom: 8 },
   emptyChat: { color: colors.textMuted, textAlign: 'center', marginTop: 40 },
+  senderName: { fontSize: 11, fontWeight: '700', color: colors.primary, marginBottom: 4 },
   chatHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -770,6 +890,29 @@ const styles = StyleSheet.create({
   bottomTabActive: { backgroundColor: colors.primaryLight },
   bottomLabel: { fontSize: 12, fontWeight: '700', color: colors.textMuted },
   bottomLabelActive: { color: colors.primary },
+  tabBadge: {
+    position: 'absolute',
+    top: -6,
+    right: -10,
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: colors.error,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+  },
+  tabBadgeText: { color: colors.white, fontSize: 9, fontWeight: '800' },
+  modalWrap: { flex: 1, justifyContent: 'center', padding: spacing.lg },
+  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.4)' },
+  sheet: {
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.xl,
+    padding: spacing.lg,
+    gap: spacing.md,
+    ...shadows.md,
+  },
+  sheetTitle: { fontSize: 18, fontWeight: '700', color: colors.text },
   toast: {
     position: 'absolute',
     left: spacing.md,

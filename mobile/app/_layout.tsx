@@ -74,6 +74,7 @@ export default function RootLayout() {
           <Stack.Screen name="directory" />
           <Stack.Screen name="expenses" />
           <Stack.Screen name="messages" options={{ animation: 'slide_from_bottom' }} />
+          <Stack.Screen name="messages-contacts" />
           <Stack.Screen name="rentals" />
           <Stack.Screen name="users" />
         </Stack>

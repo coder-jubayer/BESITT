@@ -268,6 +268,7 @@ export interface InboxContact {
   threadId?: string;
   lastMessage?: string;
   lastMessageAt?: string;
+  inInbox?: boolean;
   unread?: number;
 }
 
@@ -284,7 +285,44 @@ export interface InboxThread {
   otherRole: string;
   lastMessage?: string;
   lastMessageAt?: string;
+  updatedAt?: string;
   unread: number;
+}
+
+export interface InboxGroupMember {
+  id: string;
+  name: string;
+  role?: string;
+}
+
+export interface InboxGroup {
+  id: string;
+  name: string;
+  createdBy: string;
+  isOwner: boolean;
+  memberIds: string[];
+  members: InboxGroupMember[];
+  memberCount: number;
+  lastMessage?: string;
+  lastMessageAt?: string;
+  updatedAt?: string;
+  unread: number;
+}
+
+export interface InboxGroupMessage {
+  id: string;
+  groupId: string;
+  senderId: string;
+  senderName: string;
+  text: string;
+  mine: boolean;
+  seen?: boolean;
+  createdAt: string;
+}
+
+export interface InboxGroupDetail {
+  group: InboxGroup;
+  messages: InboxGroupMessage[];
 }
 
 export interface InboxChatMessage {

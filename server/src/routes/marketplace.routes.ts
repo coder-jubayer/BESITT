@@ -214,9 +214,9 @@ router.post('/chats/:threadId/messages', async (req: AuthRequest, res: Response,
     thread.lastMessage = text;
     thread.lastMessageAt = message.createdAt;
     if (actor.userId === thread.buyerId) {
-      thread.sellerUnread += 1;
+      thread.sellerUnread = 1;
     } else {
-      thread.buyerUnread += 1;
+      thread.buyerUnread = 1;
     }
     await thread.save();
 
@@ -325,7 +325,7 @@ router.post('/:id/contact', async (req: AuthRequest, res: Response, next: NextFu
       });
       thread.lastMessage = text;
       thread.lastMessageAt = message.createdAt;
-      thread.sellerUnread += 1;
+      thread.sellerUnread = 1;
       await thread.save();
     }
 

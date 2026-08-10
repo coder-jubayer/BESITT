@@ -3,6 +3,8 @@ import { User } from '../models/User';
 import { Building } from '../models/Building';
 import { InboxThread } from '../models/InboxThread';
 import { InboxMessage } from '../models/InboxMessage';
+import { InboxGroup } from '../models/InboxGroup';
+import { InboxGroupMessage } from '../models/InboxGroupMessage';
 import { AppError } from '../middleware/errorHandler';
 import { AuthRequest, requireAuth } from '../middleware/auth';
 import { ROLE_LABELS, isAppAdmin, UserRole } from '../constants/roles';
@@ -17,7 +19,7 @@ function pairIds(a: string, b: string): [string, string] {
 }
 
 function inboxCategory(role?: string | null): InboxCategory | null {
-  if (role === 'committee' || role === 'building_admin') return 'committee';
+  if (role === 'committee') return 'committee';
   if (role === 'resident') return 'resident';
   if (role === 'guard') return 'guard';
   return null;
@@ -71,7 +73,7 @@ router.get('/directory', async (req: AuthRequest, res: Response, next: NextFunct
       buildingId,
       isActive: true,
       _id: { $ne: actor.userId },
-      role: { $in: ['building_admin', 'committee', 'resident', 'guard'] },
+      role: { $in: ['committee', 'resident', 'guard'] },
     }).sort({ name: 1 });
 
     const threads = await InboxThread.find({
@@ -92,6 +94,7 @@ router.get('/directory', async (req: AuthRequest, res: Response, next: NextFunct
       threadId?: string;
       lastMessage?: string;
       lastMessageAt?: string;
+      inInbox: boolean;
       unread: number;
     };
 
@@ -115,7 +118,8 @@ router.get('/directory', async (req: AuthRequest, res: Response, next: NextFunct
         threadId: thread?._id.toString(),
         lastMessage: thread?.lastMessage,
         lastMessageAt: thread?.lastMessageAt?.toISOString(),
-        unread: thread ? (isA ? thread.userAUnread : thread.userBUnread) : 0,
+        inInbox: Boolean(thread),
+        unread: thread && (isA ? thread.userAUnread : thread.userBUnread) > 0 ? 1 : 0,
       };
     }
 
@@ -255,8 +259,8 @@ router.post('/threads/:threadId/messages', async (req: AuthRequest, res: Respons
 
     thread.lastMessage = text;
     thread.lastMessageAt = message.createdAt;
-    if (actor.userId === thread.userA) thread.userBUnread += 1;
-    else thread.userAUnread += 1;
+    if (actor.userId === thread.userA) thread.userBUnread = 1;
+    else thread.userAUnread = 1;
     await thread.save();
 
     res.status(201).json({
@@ -264,6 +268,191 @@ router.post('/threads/:threadId/messages', async (req: AuthRequest, res: Respons
       data: {
         message: message.toSafeJSON(actor.userId),
         thread: thread.toSafeJSON(actor.userId),
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+async function loadGroupForActor(groupId: string, actorId: string, actorRole: string) {
+  const group = await InboxGroup.findById(groupId);
+  if (!group) throw new AppError(404, 'Group not found');
+  if (!group.memberIds.includes(actorId) && !isAppAdmin(actorRole)) {
+    throw new AppError(403, 'You are not in this group');
+  }
+  return group;
+}
+
+async function memberSnapshots(ids: string[]) {
+  const unique = [...new Set(ids.filter(Boolean))];
+  const users = await User.find({ _id: { $in: unique }, isActive: true });
+  const byId = new Map(users.map((user) => [user._id.toString(), user]));
+  return unique
+    .map((id) => {
+      const user = byId.get(id);
+      if (!user) return null;
+      return { id: user._id.toString(), name: user.name, role: user.role };
+    })
+    .filter((item): item is { id: string; name: string; role: string } => Boolean(item));
+}
+
+router.get('/groups', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const actor = req.user!;
+    const groups = await InboxGroup.find({ memberIds: actor.userId })
+      .sort({ lastMessageAt: -1, updatedAt: -1 })
+      .limit(200);
+    res.json({
+      success: true,
+      data: { groups: groups.map((group) => group.toSafeJSON(actor.userId)) },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/groups', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const actor = req.user!;
+    const name = String(req.body.name ?? '').trim();
+    const requestedIds = Array.isArray(req.body.memberIds)
+      ? req.body.memberIds.map((id: unknown) => String(id).trim()).filter(Boolean)
+      : [];
+    if (name.length < 2) throw new AppError(400, 'Enter a group name');
+
+    const buildingId = await resolveBuildingId(
+      actor,
+      req.body.buildingId ? String(req.body.buildingId) : undefined,
+    );
+    const memberIds = [...new Set([actor.userId, ...requestedIds])];
+    if (memberIds.length < 2) throw new AppError(400, 'Add at least one person to the group');
+
+    const members = await memberSnapshots(memberIds);
+    if (members.length < 2) throw new AppError(400, 'Some selected people could not be added');
+    if (!isAppAdmin(actor.role)) {
+      const users = await User.find({ _id: { $in: memberIds } });
+      if (users.some((user) => user.buildingId && user.buildingId !== buildingId)) {
+        throw new AppError(403, 'You can only add people from your building');
+      }
+    }
+
+    const group = await InboxGroup.create({
+      buildingId,
+      name,
+      createdBy: actor.userId,
+      memberIds: members.map((item) => item.id),
+      members,
+      unreadIds: [],
+    });
+
+    res.status(201).json({
+      success: true,
+      data: { group: group.toSafeJSON(actor.userId), messages: [] },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get('/groups/:groupId', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const actor = req.user!;
+    const group = await loadGroupForActor(String(req.params.groupId), actor.userId, actor.role);
+    group.unreadIds = (group.unreadIds || []).filter((id) => id !== actor.userId);
+    await group.save();
+    await InboxGroupMessage.updateMany(
+      { groupId: group._id.toString(), seenBy: { $ne: actor.userId } },
+      { $addToSet: { seenBy: actor.userId } },
+    );
+    const messages = await InboxGroupMessage.find({ groupId: group._id.toString() })
+      .sort({ createdAt: 1 })
+      .limit(500);
+    res.json({
+      success: true,
+      data: {
+        group: group.toSafeJSON(actor.userId),
+        messages: messages.map((item) => item.toSafeJSON(actor.userId, group.memberIds)),
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.patch('/groups/:groupId', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const actor = req.user!;
+    const group = await loadGroupForActor(String(req.params.groupId), actor.userId, actor.role);
+    const name = String(req.body.name ?? '').trim();
+    if (name.length < 2) throw new AppError(400, 'Enter a group name');
+    group.name = name;
+    await group.save();
+    res.json({
+      success: true,
+      data: { group: group.toSafeJSON(actor.userId) },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/groups/:groupId/members', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const actor = req.user!;
+    const group = await loadGroupForActor(String(req.params.groupId), actor.userId, actor.role);
+    const requestedIds = Array.isArray(req.body.memberIds)
+      ? req.body.memberIds.map((id: unknown) => String(id).trim()).filter(Boolean)
+      : [];
+    if (!requestedIds.length) throw new AppError(400, 'Select people to add');
+
+    const nextIds = [...new Set([...group.memberIds, ...requestedIds])];
+    const members = await memberSnapshots(nextIds);
+    if (!isAppAdmin(actor.role)) {
+      const users = await User.find({ _id: { $in: requestedIds } });
+      if (users.some((user) => user.buildingId && user.buildingId !== group.buildingId)) {
+        throw new AppError(403, 'You can only add people from your building');
+      }
+    }
+    group.memberIds = members.map((item) => item.id);
+    group.members = members;
+    await group.save();
+    res.json({
+      success: true,
+      data: { group: group.toSafeJSON(actor.userId) },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/groups/:groupId/messages', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const actor = req.user!;
+    const text = String(req.body.text ?? '').trim();
+    if (text.length < 1) throw new AppError(400, 'Message cannot be empty');
+
+    const group = await loadGroupForActor(String(req.params.groupId), actor.userId, actor.role);
+    const poster = await User.findById(actor.userId);
+    const senderName = poster?.name?.trim() || 'Resident';
+    const message = await InboxGroupMessage.create({
+      groupId: group._id.toString(),
+      senderId: actor.userId,
+      senderName,
+      text,
+      seenBy: [actor.userId],
+    });
+
+    group.lastMessage = text;
+    group.lastMessageAt = message.createdAt;
+    group.unreadIds = group.memberIds.filter((id) => id !== actor.userId);
+    await group.save();
+
+    res.status(201).json({
+      success: true,
+      data: {
+        message: message.toSafeJSON(actor.userId, group.memberIds),
+        group: group.toSafeJSON(actor.userId),
       },
     });
   } catch (error) {
