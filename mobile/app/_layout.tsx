@@ -3,9 +3,8 @@ import { Stack, useRouter, useSegments } from 'expo-router';
 import { ActivityIndicator, View, StyleSheet } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import * as Notifications from 'expo-notifications';
 import { useAuthStore } from '../src/stores/auth.store';
-import { registerPushToken } from '../src/services/push.service';
+import { listenForNoticeTap, registerPushToken } from '../src/services/push.service';
 import { colors } from '../src/theme';
 
 function AuthGate({ children }: { children: React.ReactNode }) {
@@ -35,10 +34,11 @@ function AuthGate({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!isAuthenticated) return;
     void registerPushToken();
-    const sub = Notifications.addNotificationResponseReceivedListener(() => {
-      router.push('/notices');
+    let unsubscribe: (() => void) | undefined;
+    void listenForNoticeTap(() => router.push('/notices')).then((stop) => {
+      unsubscribe = stop;
     });
-    return () => sub.remove();
+    return () => unsubscribe?.();
   }, [isAuthenticated, router]);
 
   if (!isHydrated) {

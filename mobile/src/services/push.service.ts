@@ -1,18 +1,10 @@
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
-import * as Device from 'expo-device';
-import * as Notifications from 'expo-notifications';
 import { apiClient } from './api.client';
 
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-    shouldShowBanner: true,
-    shouldShowList: true,
-  }),
-});
+function isExpoGo(): boolean {
+  return Constants.appOwnership === 'expo';
+}
 
 function getProjectId(): string | null {
   const extra = Constants.expoConfig?.extra as { eas?: { projectId?: string } } | undefined;
@@ -22,8 +14,25 @@ function getProjectId(): string | null {
 }
 
 export async function registerPushToken(): Promise<void> {
+  if (isExpoGo()) return;
+
   try {
+    const [{ default: Device }, Notifications] = await Promise.all([
+      import('expo-device'),
+      import('expo-notifications'),
+    ]);
+
     if (!Device.isDevice) return;
+
+    Notifications.setNotificationHandler({
+      handleNotification: async () => ({
+        shouldShowAlert: true,
+        shouldPlaySound: true,
+        shouldSetBadge: false,
+        shouldShowBanner: true,
+        shouldShowList: true,
+      }),
+    });
 
     if (Platform.OS === 'android') {
       await Notifications.setNotificationChannelAsync('notices', {
@@ -59,5 +68,17 @@ export async function unregisterPushToken(): Promise<void> {
     await apiClient.delete('/auth/push-token');
   } catch {
     // Ignore logout cleanup failures
+  }
+}
+
+export async function listenForNoticeTap(onTap: () => void): Promise<() => void> {
+  if (isExpoGo()) return () => undefined;
+
+  try {
+    const Notifications = await import('expo-notifications');
+    const sub = Notifications.addNotificationResponseReceivedListener(onTap);
+    return () => sub.remove();
+  } catch {
+    return () => undefined;
   }
 }
