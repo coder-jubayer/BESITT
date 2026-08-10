@@ -1,4 +1,4 @@
-import { apiClient } from './api.client';
+import { apiClient, getAuthToken } from './api.client';
 import type {
   ApiResponse,
   InboxChatMessage,
@@ -86,6 +86,30 @@ export async function renameInboxGroup(groupId: string, name: string): Promise<I
   const { data } = await apiClient.patch<ApiResponse<{ group: InboxGroup }>>(`/inbox/groups/${groupId}`, { name });
   if (!data.success || !data.data?.group) {
     throw new Error(data.message ?? 'Failed to rename group');
+  }
+  return data.data.group;
+}
+
+export async function uploadInboxGroupPhoto(
+  groupId: string,
+  photo: { uri: string; name?: string; type?: string },
+): Promise<InboxGroup> {
+  const form = new FormData();
+  form.append('photo', {
+    uri: photo.uri,
+    name: photo.name || 'group.jpg',
+    type: photo.type || 'image/jpeg',
+  } as unknown as Blob);
+
+  const { data } = await apiClient.post<ApiResponse<{ group: InboxGroup }>>(`/inbox/groups/${groupId}/photo`, form, {
+    headers: {
+      Authorization: getAuthToken() ? `Bearer ${getAuthToken()}` : undefined,
+      'Content-Type': 'multipart/form-data',
+    },
+    timeout: 60000,
+  });
+  if (!data.success || !data.data?.group) {
+    throw new Error(data.message ?? 'Failed to update group photo');
   }
   return data.data.group;
 }

@@ -14,6 +14,7 @@ import {
   Modal,
 } from 'react-native';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, spacing, borderRadius, shadows } from '../src/theme';
@@ -33,6 +34,7 @@ import {
   renameInboxGroup,
   sendInboxGroupMessage,
   sendInboxMessage,
+  uploadInboxGroupPhoto,
 } from '../src/services/inbox.service';
 import { formatChatTime } from '../src/utils/date';
 import {
@@ -128,6 +130,9 @@ export default function MessagesScreen() {
   const [renameOpen, setRenameOpen] = useState(false);
   const [renameValue, setRenameValue] = useState('');
   const [renaming, setRenaming] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [membersOpen, setMembersOpen] = useState(false);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
 
   const showToast = (message: string) => {
     setToast(message);
@@ -187,7 +192,7 @@ export default function MessagesScreen() {
     setActiveGroup(group);
     setChatTitle(group.name);
     setChatSubtitle(`${group.memberCount} members`);
-    setChatImage(undefined);
+    setChatImage(group.photo);
     setChatPhone(undefined);
     setMessages(nextMessages);
     setGroups((current) => sortByRecency([{ ...group, unread: 0 }, ...current.filter((item) => item.id !== group.id)]));
@@ -339,6 +344,39 @@ export default function MessagesScreen() {
     }
   };
 
+  const pickGroupPhoto = async () => {
+    if (!activeGroup || uploadingPhoto) return;
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      showToast('Photo library permission is required.');
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      quality: 0.78,
+      allowsEditing: true,
+      aspect: [1, 1],
+    });
+    if (result.canceled || !result.assets[0]) return;
+    const asset = result.assets[0];
+    setUploadingPhoto(true);
+    try {
+      const group = await uploadInboxGroupPhoto(activeGroup.id, {
+        uri: asset.uri,
+        name: asset.fileName || 'group.jpg',
+        type: asset.mimeType || 'image/jpeg',
+      });
+      setActiveGroup(group);
+      setChatImage(group.photo);
+      setGroups((current) => current.map((item) => (item.id === group.id ? group : item)));
+      showToast('Group photo updated');
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Failed to update photo');
+    } finally {
+      setUploadingPhoto(false);
+    }
+  };
+
   const saveRename = async () => {
     if (!activeGroup || renameValue.trim().length < 2) {
       showToast('Enter a group name');
@@ -387,32 +425,17 @@ export default function MessagesScreen() {
               />
             </View>
           )}
-          <Pressable
-            style={{ flex: 1 }}
-            onPress={() => {
-              if (chatKind !== 'groups' || !activeGroup) return;
-              setRenameValue(activeGroup.name);
-              setRenameOpen(true);
-            }}
-          >
+          <View style={{ flex: 1 }}>
             <Text style={styles.chatName} numberOfLines={1}>
               {chatTitle}
             </Text>
             <Text style={styles.chatRole} numberOfLines={1}>
-              {chatKind === 'groups' ? `${chatSubtitle} · tap to rename` : chatSubtitle}
+              {chatSubtitle}
             </Text>
-          </Pressable>
+          </View>
           {chatKind === 'groups' && activeGroup ? (
-            <Pressable
-              style={styles.headerCall}
-              onPress={() =>
-                router.push({
-                  pathname: '/messages-contacts',
-                  params: { mode: 'group-members', groupId: activeGroup.id },
-                })
-              }
-            >
-              <Ionicons name="person-add" size={18} color={colors.primary} />
+            <Pressable style={styles.headerCall} onPress={() => setMenuOpen(true)}>
+              <Ionicons name="ellipsis-vertical" size={18} color={colors.slate800} />
             </Pressable>
           ) : null}
           {chatPhone ? (
@@ -457,6 +480,91 @@ export default function MessagesScreen() {
             <Ionicons name="send" size={18} color={colors.white} />
           </Pressable>
         </View>
+        <Modal visible={menuOpen} animationType="fade" transparent onRequestClose={() => setMenuOpen(false)}>
+          <View style={styles.modalWrap}>
+            <Pressable style={styles.backdrop} onPress={() => setMenuOpen(false)} />
+            <View style={styles.menuSheet}>
+              <Text style={styles.sheetTitle}>Group options</Text>
+              <Pressable
+                style={styles.menuRow}
+                onPress={() => {
+                  if (!activeGroup) return;
+                  setMenuOpen(false);
+                  setRenameValue(activeGroup.name);
+                  setRenameOpen(true);
+                }}
+              >
+                <Ionicons name="pencil" size={18} color={colors.primary} />
+                <Text style={styles.menuLabel}>Rename</Text>
+              </Pressable>
+              <Pressable
+                style={styles.menuRow}
+                onPress={() => {
+                  setMenuOpen(false);
+                  setMembersOpen(true);
+                }}
+              >
+                <Ionicons name="people" size={18} color={colors.primary} />
+                <Text style={styles.menuLabel}>Members</Text>
+              </Pressable>
+              <Pressable
+                style={styles.menuRow}
+                onPress={() => {
+                  if (!activeGroup) return;
+                  setMenuOpen(false);
+                  router.push({
+                    pathname: '/messages-contacts',
+                    params: { mode: 'group-members', groupId: activeGroup.id },
+                  });
+                }}
+              >
+                <Ionicons name="person-add" size={18} color={colors.primary} />
+                <Text style={styles.menuLabel}>Add</Text>
+              </Pressable>
+              <Pressable
+                style={styles.menuRow}
+                onPress={() => {
+                  setMenuOpen(false);
+                  void pickGroupPhoto();
+                }}
+              >
+                <Ionicons name="image" size={18} color={colors.primary} />
+                <Text style={styles.menuLabel}>{uploadingPhoto ? 'Uploading…' : 'Add photo'}</Text>
+              </Pressable>
+            </View>
+          </View>
+        </Modal>
+        <Modal visible={membersOpen} animationType="slide" transparent onRequestClose={() => setMembersOpen(false)}>
+          <View style={styles.membersWrap}>
+            <Pressable style={styles.backdrop} onPress={() => setMembersOpen(false)} />
+            <View style={[styles.membersSheet, { paddingBottom: insets.bottom + spacing.md }]}>
+              <View style={styles.sheetHandle} />
+              <Text style={styles.sheetTitle}>Members</Text>
+              <Text style={styles.membersHint}>{activeGroup?.memberCount ?? 0} people in this group</Text>
+              <ScrollView style={styles.membersList}>
+                {(activeGroup?.members ?? []).map((member) => (
+                  <View key={member.id} style={styles.memberRow}>
+                    <View style={styles.memberAvatar}>
+                      <Text style={styles.memberInitial}>{(member.name || 'U').trim().charAt(0).toUpperCase()}</Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.memberName}>
+                        {member.name}
+                        {member.id === activeGroup?.createdBy ? ' · Admin' : ''}
+                      </Text>
+                      <Text style={styles.memberMeta}>
+                        {roleLabel(member.role)}
+                        {member.unitNumber ? ` · Apt ${member.unitNumber}` : ''}
+                      </Text>
+                      {member.phone ? <Text style={styles.memberPhone}>{member.phone}</Text> : null}
+                    </View>
+                  </View>
+                ))}
+              </ScrollView>
+              <Button title="Close" variant="ghost" onPress={() => setMembersOpen(false)} />
+            </View>
+          </View>
+        </Modal>
         <Modal visible={renameOpen} animationType="fade" transparent onRequestClose={() => setRenameOpen(false)}>
           <View style={styles.modalWrap}>
             <Pressable style={styles.backdrop} onPress={() => setRenameOpen(false)} />
@@ -633,9 +741,13 @@ export default function MessagesScreen() {
             ) : null}
             {filteredGroups.map((group) => (
               <Pressable key={group.id} style={styles.chatRow} onPress={() => void openGroupChat(group.id)}>
-                <View style={styles.rowAvatar}>
-                  <Ionicons name="people" size={20} color={colors.primary} />
-                </View>
+                {group.photo ? (
+                  <Image source={{ uri: group.photo }} style={styles.rowImage} />
+                ) : (
+                  <View style={styles.rowAvatar}>
+                    <Ionicons name="people" size={20} color={colors.primary} />
+                  </View>
+                )}
                 <View style={{ flex: 1 }}>
                   <View style={styles.rowTop}>
                     <Text style={styles.rowName} numberOfLines={1}>
@@ -803,7 +915,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  chatListingImage: { width: 40, height: 40, borderRadius: 12, backgroundColor: colors.slate100 },
+  chatListingImage: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.slate100 },
   chatName: { fontWeight: '700', color: colors.text },
   chatRole: { fontSize: 11, color: colors.textSecondary },
   headerCall: {
@@ -913,6 +1025,61 @@ const styles = StyleSheet.create({
     ...shadows.md,
   },
   sheetTitle: { fontSize: 18, fontWeight: '700', color: colors.text },
+  menuSheet: {
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.xl,
+    padding: spacing.lg,
+    gap: 4,
+    ...shadows.md,
+  },
+  menuRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  menuLabel: { fontSize: 15, fontWeight: '700', color: colors.text },
+  membersWrap: { flex: 1, justifyContent: 'flex-end' },
+  membersSheet: {
+    backgroundColor: colors.surface,
+    borderTopLeftRadius: borderRadius.xl,
+    borderTopRightRadius: borderRadius.xl,
+    padding: spacing.lg,
+    maxHeight: '80%',
+    gap: spacing.sm,
+  },
+  sheetHandle: {
+    alignSelf: 'center',
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: colors.border,
+    marginBottom: spacing.sm,
+  },
+  membersHint: { color: colors.textSecondary, marginBottom: spacing.sm },
+  membersList: { maxHeight: 360 },
+  memberRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  memberAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  memberInitial: { fontWeight: '800', color: colors.primary },
+  memberName: { fontWeight: '700', color: colors.text },
+  memberMeta: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
+  memberPhone: { fontSize: 12, color: colors.text, marginTop: 2, fontWeight: '600' },
   toast: {
     position: 'absolute',
     left: spacing.md,

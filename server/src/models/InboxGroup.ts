@@ -4,6 +4,8 @@ export interface IInboxGroupMember {
   id: string;
   name: string;
   role?: string;
+  phone?: string;
+  unitNumber?: string;
 }
 
 export interface IInboxGroup {
@@ -12,6 +14,7 @@ export interface IInboxGroup {
   createdBy: string;
   memberIds: string[];
   members: IInboxGroupMember[];
+  photo?: string;
   lastMessage?: string;
   lastMessageAt?: Date;
   unreadIds: string[];
@@ -28,6 +31,7 @@ export interface IInboxGroupDocument extends IInboxGroup, Document {
     memberIds: string[];
     members: IInboxGroupMember[];
     memberCount: number;
+    photo?: string;
     lastMessage?: string;
     lastMessageAt?: string;
     updatedAt?: string;
@@ -47,11 +51,14 @@ const inboxGroupSchema = new Schema<IInboxGroupDocument>(
           id: { type: String, required: true },
           name: { type: String, required: true },
           role: { type: String },
+          phone: { type: String },
+          unitNumber: { type: String },
           _id: false,
         },
       ],
       default: [],
     },
+    photo: { type: String, trim: true },
     lastMessage: { type: String, trim: true },
     lastMessageAt: { type: Date },
     unreadIds: { type: [String], default: [] },
@@ -70,6 +77,7 @@ inboxGroupSchema.methods.toSafeJSON = function toSafeJSON(actorId: string) {
     memberIds: this.memberIds,
     members: this.members || [],
     memberCount: (this.memberIds || []).length,
+    photo: this.photo,
     lastMessage: this.lastMessage,
     lastMessageAt: this.lastMessageAt ? this.lastMessageAt.toISOString() : undefined,
     updatedAt: this.updatedAt ? this.updatedAt.toISOString() : undefined,

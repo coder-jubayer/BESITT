@@ -293,6 +293,8 @@ export interface InboxGroupMember {
   id: string;
   name: string;
   role?: string;
+  phone?: string;
+  unitNumber?: string;
 }
 
 export interface InboxGroup {
@@ -303,6 +305,7 @@ export interface InboxGroup {
   memberIds: string[];
   members: InboxGroupMember[];
   memberCount: number;
+  photo?: string;
   lastMessage?: string;
   lastMessageAt?: string;
   updatedAt?: string;

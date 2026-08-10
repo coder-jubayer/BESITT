@@ -1,16 +1,58 @@
+import fs from 'fs';
+import path from 'path';
 import { Router, Response, NextFunction } from 'express';
+import multer from 'multer';
 import { User } from '../models/User';
 import { Building } from '../models/Building';
 import { InboxThread } from '../models/InboxThread';
 import { InboxMessage } from '../models/InboxMessage';
-import { InboxGroup } from '../models/InboxGroup';
+import { InboxGroup, IInboxGroupDocument } from '../models/InboxGroup';
 import { InboxGroupMessage } from '../models/InboxGroupMessage';
 import { AppError } from '../middleware/errorHandler';
 import { AuthRequest, requireAuth } from '../middleware/auth';
 import { ROLE_LABELS, isAppAdmin, UserRole } from '../constants/roles';
+import {
+  ensureUploadDirs,
+  groupsUploadDir,
+  publicFileUrl,
+  removeStoredFiles,
+  storedGroupPath,
+} from '../utils/uploads';
 
 const router = Router();
 router.use(requireAuth);
+ensureUploadDirs();
+
+const groupPhotoStorage = multer.diskStorage({
+  destination: (_req, _file, cb) => {
+    ensureUploadDirs();
+    cb(null, groupsUploadDir);
+  },
+  filename: (_req, file, cb) => {
+    const ext = path.extname(file.originalname || '').toLowerCase() || '.jpg';
+    const safeExt = ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.heic'].includes(ext) ? ext : '.jpg';
+    cb(null, `${Date.now()}-${Math.random().toString(36).slice(2, 10)}${safeExt}`);
+  },
+});
+
+const groupPhotoUpload = multer({
+  storage: groupPhotoStorage,
+  limits: { fileSize: 5 * 1024 * 1024, files: 1 },
+  fileFilter: (_req, file, cb) => {
+    if (!/^image\//i.test(file.mimetype || '')) {
+      cb(new AppError(400, 'Only images are allowed'));
+      return;
+    }
+    cb(null, true);
+  },
+});
+
+function groupDto(req: AuthRequest, group: IInboxGroupDocument, actorId: string) {
+  return {
+    ...group.toSafeJSON(actorId),
+    photo: publicFileUrl(req, group.photo),
+  };
+}
 
 export type InboxCategory = 'committee' | 'resident' | 'guard';
 
@@ -292,9 +334,17 @@ async function memberSnapshots(ids: string[]) {
     .map((id) => {
       const user = byId.get(id);
       if (!user) return null;
-      return { id: user._id.toString(), name: user.name, role: user.role };
+      return {
+        id: user._id.toString(),
+        name: user.name,
+        role: user.role,
+        phone: user.phone,
+        unitNumber: user.unitNumber,
+      };
     })
-    .filter((item): item is { id: string; name: string; role: string } => Boolean(item));
+    .filter(
+      (item): item is { id: string; name: string; role: string; phone?: string; unitNumber?: string } => Boolean(item),
+    );
 }
 
 router.get('/groups', async (req: AuthRequest, res: Response, next: NextFunction) => {
@@ -305,7 +355,7 @@ router.get('/groups', async (req: AuthRequest, res: Response, next: NextFunction
       .limit(200);
     res.json({
       success: true,
-      data: { groups: groups.map((group) => group.toSafeJSON(actor.userId)) },
+      data: { groups: groups.map((group) => groupDto(req, group, actor.userId)) },
     });
   } catch (error) {
     next(error);
@@ -348,7 +398,7 @@ router.post('/groups', async (req: AuthRequest, res: Response, next: NextFunctio
 
     res.status(201).json({
       success: true,
-      data: { group: group.toSafeJSON(actor.userId), messages: [] },
+      data: { group: groupDto(req, group, actor.userId), messages: [] },
     });
   } catch (error) {
     next(error);
@@ -371,7 +421,7 @@ router.get('/groups/:groupId', async (req: AuthRequest, res: Response, next: Nex
     res.json({
       success: true,
       data: {
-        group: group.toSafeJSON(actor.userId),
+        group: groupDto(req, group, actor.userId),
         messages: messages.map((item) => item.toSafeJSON(actor.userId, group.memberIds)),
       },
     });
@@ -390,12 +440,37 @@ router.patch('/groups/:groupId', async (req: AuthRequest, res: Response, next: N
     await group.save();
     res.json({
       success: true,
-      data: { group: group.toSafeJSON(actor.userId) },
+      data: { group: groupDto(req, group, actor.userId) },
     });
   } catch (error) {
     next(error);
   }
 });
+
+router.post(
+  '/groups/:groupId/photo',
+  groupPhotoUpload.single('photo'),
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const actor = req.user!;
+      const file = req.file;
+      if (!file) throw new AppError(400, 'Choose a group photo');
+      const group = await loadGroupForActor(String(req.params.groupId), actor.userId, actor.role);
+      const previous = group.photo;
+      group.photo = storedGroupPath(file.filename);
+      await group.save();
+      if (previous) await removeStoredFiles([previous]);
+      res.json({
+        success: true,
+        data: { group: groupDto(req, group, actor.userId) },
+      });
+    } catch (error) {
+      const file = req.file;
+      if (file) await fs.promises.unlink(file.path).catch(() => undefined);
+      next(error);
+    }
+  },
+);
 
 router.post('/groups/:groupId/members', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
@@ -419,7 +494,7 @@ router.post('/groups/:groupId/members', async (req: AuthRequest, res: Response, 
     await group.save();
     res.json({
       success: true,
-      data: { group: group.toSafeJSON(actor.userId) },
+      data: { group: groupDto(req, group, actor.userId) },
     });
   } catch (error) {
     next(error);
@@ -452,7 +527,7 @@ router.post('/groups/:groupId/messages', async (req: AuthRequest, res: Response,
       success: true,
       data: {
         message: message.toSafeJSON(actor.userId, group.memberIds),
-        group: group.toSafeJSON(actor.userId),
+        group: groupDto(req, group, actor.userId),
       },
     });
   } catch (error) {
