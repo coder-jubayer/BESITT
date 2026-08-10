@@ -75,6 +75,7 @@ export default function ComplaintsScreen() {
   const [selected, setSelected] = useState<ComplaintTicket | null>(null);
   const [comments, setComments] = useState<ComplaintComment[]>([]);
   const [draft, setDraft] = useState('');
+  const [commentMedia, setCommentMedia] = useState<LocalMedia[]>([]);
   const [sending, setSending] = useState(false);
   const [updatingStatus, setUpdatingStatus] = useState(false);
 
@@ -126,6 +127,7 @@ export default function ComplaintsScreen() {
       setSelected(detail.complaint);
       setComments(detail.comments);
       setDraft('');
+      setCommentMedia([]);
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Failed to open ticket');
     }
@@ -227,13 +229,51 @@ export default function ComplaintsScreen() {
     }
   };
 
+  const pickCommentMedia = async () => {
+    const remaining = 5 - commentMedia.length;
+    if (remaining <= 0) {
+      showToast('You can add up to 5 files.');
+      return;
+    }
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      showToast('Photo library permission is required.');
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.All,
+      allowsMultipleSelection: true,
+      quality: 0.72,
+      selectionLimit: remaining,
+    });
+    if (result.canceled) return;
+    setCommentMedia((current) =>
+      [
+        ...current,
+        ...result.assets.map((asset, index) => ({
+          uri: asset.uri,
+          name: asset.fileName || `media-${Date.now()}-${index}`,
+          type: asset.mimeType || (asset.type === 'video' ? 'video/mp4' : 'image/jpeg'),
+          kind: (asset.type === 'video' || /^video\//i.test(asset.mimeType || '') ? 'video' : 'image') as
+            | 'image'
+            | 'video',
+        })),
+      ].slice(0, 5),
+    );
+  };
+
   const handleComment = async () => {
-    if (!selected || draft.trim().length < 1) return;
+    if (!selected || (draft.trim().length < 1 && !commentMedia.length)) return;
     setSending(true);
     try {
-      const comment = await addComplaintComment(selected.id, draft.trim());
+      const comment = await addComplaintComment(
+        selected.id,
+        draft.trim(),
+        commentMedia.map((item) => ({ uri: item.uri, name: item.name, type: item.type })),
+      );
       setComments((current) => [...current, comment]);
       setDraft('');
+      setCommentMedia([]);
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Failed to add comment');
     } finally {
@@ -397,7 +437,23 @@ export default function ComplaintsScreen() {
                 <Text style={styles.commentAuthor}>{comment.authorName}</Text>
                 <Text style={styles.commentTime}>{formatNoticeDate(comment.createdAt)}</Text>
               </View>
-              <Text style={styles.commentText}>{comment.text}</Text>
+              {comment.text ? <Text style={styles.commentText}>{comment.text}</Text> : null}
+              {comment.media?.length ? (
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.mediaRow}>
+                  {comment.media.map((item, index) => (
+                    <Pressable key={`${item.url}-${index}`} onPress={() => void Linking.openURL(item.url)}>
+                      {item.kind === 'image' ? (
+                        <Image source={{ uri: item.url }} style={styles.mediaThumb} contentFit="cover" />
+                      ) : (
+                        <View style={styles.videoThumb}>
+                          <Ionicons name="play-circle" size={28} color={colors.white} />
+                          <Text style={styles.videoLabel}>Video</Text>
+                        </View>
+                      )}
+                    </Pressable>
+                  ))}
+                </ScrollView>
+              ) : null}
             </View>
           ))}
         </ScrollView>
@@ -407,7 +463,35 @@ export default function ComplaintsScreen() {
             behavior={Platform.OS === 'ios' ? 'padding' : undefined}
             keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}
           >
+            {commentMedia.length ? (
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.composerMediaRow}
+              >
+                {commentMedia.map((item, index) => (
+                  <View key={`${item.uri}-${index}`} style={styles.composerPreviewWrap}>
+                    {item.kind === 'image' ? (
+                      <Image source={{ uri: item.uri }} style={styles.composerPreview} contentFit="cover" />
+                    ) : (
+                      <View style={styles.composerVideoPreview}>
+                        <Ionicons name="videocam" size={18} color={colors.primary} />
+                      </View>
+                    )}
+                    <Pressable
+                      style={styles.composerRemove}
+                      onPress={() => setCommentMedia((current) => current.filter((_, i) => i !== index))}
+                    >
+                      <Ionicons name="close" size={12} color={colors.white} />
+                    </Pressable>
+                  </View>
+                ))}
+              </ScrollView>
+            ) : null}
             <View style={[styles.composer, { paddingBottom: Math.max(insets.bottom, 12) }]}>
+              <Pressable style={styles.attachBtn} onPress={() => void pickCommentMedia()}>
+                <Ionicons name="attach" size={22} color={colors.primary} />
+              </Pressable>
               <TextInput
                 value={draft}
                 onChangeText={setDraft}
@@ -416,7 +500,11 @@ export default function ComplaintsScreen() {
                 style={styles.composerInput}
                 multiline
               />
-              <Pressable style={styles.send} onPress={() => void handleComment()} disabled={sending || !draft.trim()}>
+              <Pressable
+                style={styles.send}
+                onPress={() => void handleComment()}
+                disabled={sending || (!draft.trim() && !commentMedia.length)}
+              >
                 <Ionicons name="send" size={18} color={colors.white} />
               </Pressable>
             </View>
@@ -799,6 +887,14 @@ const styles = StyleSheet.create({
     borderTopColor: colors.slate200,
     width: '100%',
   },
+  attachBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: colors.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   composerInput: {
     flex: 1,
     minWidth: 0,
@@ -810,6 +906,33 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.text,
     maxHeight: 120,
+  },
+  composerMediaRow: {
+    gap: 8,
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.sm,
+    backgroundColor: colors.surface,
+  },
+  composerPreviewWrap: { width: 56, height: 56 },
+  composerPreview: { width: 56, height: 56, borderRadius: 10 },
+  composerVideoPreview: {
+    width: 56,
+    height: 56,
+    borderRadius: 10,
+    backgroundColor: colors.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  composerRemove: {
+    position: 'absolute',
+    top: -6,
+    right: -6,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: colors.error,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   send: {
     width: 44,

@@ -5,17 +5,19 @@ export interface IInboxMessage {
   senderId: string;
   senderName: string;
   text: string;
+  image?: string;
   seenAt?: Date;
   createdAt: Date;
 }
 
 export interface IInboxMessageDocument extends IInboxMessage, Document {
-  toSafeJSON(actorId: string): {
+  toSafeJSON(actorId: string, imageUrl?: string): {
     id: string;
     threadId: string;
     senderId: string;
     senderName: string;
     text: string;
+    image?: string;
     mine: boolean;
     seen: boolean;
     createdAt: string;
@@ -27,7 +29,8 @@ const inboxMessageSchema = new Schema<IInboxMessageDocument>(
     threadId: { type: String, required: true, index: true },
     senderId: { type: String, required: true },
     senderName: { type: String, required: true, trim: true },
-    text: { type: String, required: true, trim: true },
+    text: { type: String, trim: true, default: '' },
+    image: { type: String, trim: true },
     seenAt: { type: Date },
   },
   { timestamps: { createdAt: true, updatedAt: false } },
@@ -35,13 +38,14 @@ const inboxMessageSchema = new Schema<IInboxMessageDocument>(
 
 inboxMessageSchema.index({ threadId: 1, createdAt: 1 });
 
-inboxMessageSchema.methods.toSafeJSON = function toSafeJSON(actorId: string) {
+inboxMessageSchema.methods.toSafeJSON = function toSafeJSON(actorId: string, imageUrl?: string) {
   return {
     id: this._id.toString(),
     threadId: this.threadId,
     senderId: this.senderId,
     senderName: this.senderName,
-    text: this.text,
+    text: this.text || '',
+    image: imageUrl ?? this.image,
     mine: this.senderId === actorId,
     seen: Boolean(this.seenAt),
     createdAt: (this.createdAt ?? new Date()).toISOString(),

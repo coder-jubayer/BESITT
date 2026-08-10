@@ -128,6 +128,7 @@ export default function MessagesScreen() {
   const [activeGroup, setActiveGroup] = useState<InboxGroup | null>(null);
   const [messages, setMessages] = useState<Array<MarketplaceChatMessage | InboxChatMessage | InboxGroupMessage>>([]);
   const [draft, setDraft] = useState('');
+  const [pendingPhoto, setPendingPhoto] = useState<{ uri: string; name?: string; type?: string } | null>(null);
   const [sending, setSending] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
   const [renameValue, setRenameValue] = useState('');
@@ -302,26 +303,49 @@ export default function MessagesScreen() {
     return groups.filter((group) => group.name.toLowerCase().includes(q));
   }, [groups, groupSearch]);
 
+  const pickChatPhoto = async () => {
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      showToast('Photo library permission is required.');
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      quality: 0.78,
+      allowsEditing: false,
+    });
+    if (result.canceled || !result.assets[0]) return;
+    const asset = result.assets[0];
+    setPendingPhoto({
+      uri: asset.uri,
+      name: asset.fileName || 'photo.jpg',
+      type: asset.mimeType || 'image/jpeg',
+    });
+  };
+
   const handleSend = async () => {
-    if (!chatId || !chatKind || !draft.trim() || sending) return;
+    if (!chatId || !chatKind || sending) return;
+    if (!draft.trim() && !pendingPhoto) return;
     setSending(true);
     const text = draft.trim();
+    const photo = pendingPhoto;
     setDraft('');
+    setPendingPhoto(null);
     try {
       if (chatKind === 'marketplace') {
-        const result = await sendMarketplaceMessage(chatId, text);
+        const result = await sendMarketplaceMessage(chatId, text, photo || undefined);
         setMessages((current) => [...current, result.message]);
         setMarketThreads((current) =>
           sortByRecency([result.thread, ...current.filter((item) => item.id !== result.thread.id)]),
         );
       } else if (chatKind === 'inbox') {
-        const result = await sendInboxMessage(chatId, text);
+        const result = await sendInboxMessage(chatId, text, photo || undefined);
         setMessages((current) => [...current, result.message]);
         setInboxThreads((current) =>
           sortByRecency([result.thread, ...current.filter((item) => item.id !== result.thread.id)]),
         );
       } else {
-        const result = await sendInboxGroupMessage(chatId, text);
+        const result = await sendInboxGroupMessage(chatId, text, photo || undefined);
         setMessages((current) => [...current, result.message]);
         setActiveGroup(result.group);
         setChatTitle(result.group.name);
@@ -331,6 +355,7 @@ export default function MessagesScreen() {
       }
     } catch (err) {
       setDraft(text);
+      setPendingPhoto(photo);
       showToast(err instanceof Error ? err.message : 'Failed to send');
     } finally {
       setSending(false);
@@ -385,6 +410,7 @@ export default function MessagesScreen() {
     setActiveGroup(null);
     setMessages([]);
     setDraft('');
+    setPendingPhoto(null);
     setMenuOpen(false);
     setMembersOpen(false);
     setRenameOpen(false);
@@ -494,7 +520,14 @@ export default function MessagesScreen() {
               {chatKind === 'groups' && !item.mine ? (
                 <Text style={styles.senderName}>{item.senderName}</Text>
               ) : null}
-              <Text style={item.mine ? styles.bubbleRightText : styles.bubbleLeftText}>{item.text}</Text>
+              {'image' in item && item.image ? (
+                <Pressable onPress={() => void Linking.openURL(item.image!)}>
+                  <Image source={{ uri: item.image }} style={styles.bubbleImage} />
+                </Pressable>
+              ) : null}
+              {item.text && !('image' in item && item.image && item.text === 'Sent a photo') ? (
+                <Text style={item.mine ? styles.bubbleRightText : styles.bubbleLeftText}>{item.text}</Text>
+              ) : null}
               <View style={styles.metaRow}>
                 <Text style={item.mine ? styles.timeRight : styles.timeLeft}>{formatChatTime(item.createdAt)}</Text>
                 {item.mine ? <SeenTicks seen={item.seen} /> : null}
@@ -502,7 +535,18 @@ export default function MessagesScreen() {
             </View>
           ))}
         </ScrollView>
+        {pendingPhoto ? (
+          <View style={styles.pendingPhotoRow}>
+            <Image source={{ uri: pendingPhoto.uri }} style={styles.pendingPhoto} />
+            <Pressable style={styles.pendingRemove} onPress={() => setPendingPhoto(null)}>
+              <Ionicons name="close" size={14} color={colors.white} />
+            </Pressable>
+          </View>
+        ) : null}
         <View style={[styles.composer, { paddingBottom: Math.max(insets.bottom, 12) }]}>
+          <Pressable style={styles.attachBtn} onPress={() => void pickChatPhoto()}>
+            <Ionicons name="image" size={22} color={colors.primary} />
+          </Pressable>
           <TextInput
             style={styles.input}
             placeholder="Type a message..."
@@ -511,7 +555,11 @@ export default function MessagesScreen() {
             onChangeText={setDraft}
             multiline
           />
-          <Pressable style={styles.send} onPress={() => void handleSend()} disabled={sending || !draft.trim()}>
+          <Pressable
+            style={styles.send}
+            onPress={() => void handleSend()}
+            disabled={sending || (!draft.trim() && !pendingPhoto)}
+          >
             <Ionicons name="send" size={18} color={colors.white} />
           </Pressable>
         </View>
@@ -984,8 +1032,34 @@ const styles = StyleSheet.create({
     padding: 12,
   },
   bubbleRightText: { color: colors.white, fontSize: 14 },
+  bubbleImage: {
+    width: 180,
+    height: 180,
+    borderRadius: 12,
+    marginBottom: 6,
+    backgroundColor: colors.slate100,
+  },
   timeRight: { fontSize: 10, color: '#C7D2FE' },
   metaRow: { flexDirection: 'row', alignItems: 'center', marginTop: 4, justifyContent: 'flex-end' },
+  pendingPhotoRow: {
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.sm,
+    backgroundColor: colors.surface,
+    borderTopWidth: 1,
+    borderTopColor: colors.slate200,
+  },
+  pendingPhoto: { width: 72, height: 72, borderRadius: 12 },
+  pendingRemove: {
+    position: 'absolute',
+    top: 4,
+    left: spacing.md + 56,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: colors.error,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   composer: {
     flexDirection: 'row',
     alignItems: 'flex-end',
@@ -994,6 +1068,14 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     borderTopWidth: 1,
     borderTopColor: colors.slate200,
+  },
+  attachBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: colors.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   input: {
     flex: 1,

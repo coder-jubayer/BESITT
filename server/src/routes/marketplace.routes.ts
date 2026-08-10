@@ -19,12 +19,38 @@ import {
   marketplaceUploadDir,
   publicFileUrl,
   removeStoredFiles,
+  storedChatPath,
   storedMarketplacePath,
+  chatUploadDir,
 } from '../utils/uploads';
 
 const router = Router();
 router.use(requireAuth);
 ensureUploadDirs();
+
+const chatPhotoStorage = multer.diskStorage({
+  destination: (_req, _file, cb) => {
+    ensureUploadDirs();
+    cb(null, chatUploadDir);
+  },
+  filename: (_req, file, cb) => {
+    const ext = path.extname(file.originalname || '').toLowerCase() || '.jpg';
+    const safeExt = ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.heic'].includes(ext) ? ext : '.jpg';
+    cb(null, `${Date.now()}-${Math.random().toString(36).slice(2, 10)}${safeExt}`);
+  },
+});
+
+const chatPhotoUpload = multer({
+  storage: chatPhotoStorage,
+  limits: { fileSize: 5 * 1024 * 1024, files: 1 },
+  fileFilter: (_req, file, cb) => {
+    if (!/^image\//i.test(file.mimetype || '')) {
+      cb(new AppError(400, 'Only photos are allowed'));
+      return;
+    }
+    cb(null, true);
+  },
+});
 
 const storage = multer.diskStorage({
   destination: (_req, _file, cb) => {
@@ -87,6 +113,10 @@ function listingDto(req: AuthRequest, listing: IMarketplaceListingDocument, acto
 
 function threadDto(req: AuthRequest, thread: InstanceType<typeof MarketplaceThread>, actorId: string) {
   return thread.toSafeJSON(actorId, publicFileUrl(req, thread.listingImage));
+}
+
+function messageDto(req: AuthRequest, message: InstanceType<typeof MarketplaceMessage>, actorId: string) {
+  return message.toSafeJSON(actorId, publicFileUrl(req, message.image));
 }
 
 function normalizePhone(phone: string): string {
@@ -181,7 +211,7 @@ router.get('/chats/:threadId', async (req: AuthRequest, res: Response, next: Nex
       success: true,
       data: {
         thread: threadDto(req, thread, actor.userId),
-        messages: messages.map((item) => item.toSafeJSON(actor.userId)),
+        messages: messages.map((item) => messageDto(req, item, actor.userId)),
       },
     });
   } catch (error) {
@@ -189,48 +219,56 @@ router.get('/chats/:threadId', async (req: AuthRequest, res: Response, next: Nex
   }
 });
 
-router.post('/chats/:threadId/messages', async (req: AuthRequest, res: Response, next: NextFunction) => {
-  try {
-    const actor = req.user!;
-    const text = String(req.body.text ?? '').trim();
-    if (text.length < 1) throw new AppError(400, 'Message cannot be empty');
+router.post(
+  '/chats/:threadId/messages',
+  chatPhotoUpload.single('image'),
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const actor = req.user!;
+      const text = String(req.body.text ?? '').trim();
+      const file = req.file;
+      if (text.length < 1 && !file) throw new AppError(400, 'Message cannot be empty');
 
-    const thread = await MarketplaceThread.findById(req.params.threadId);
-    if (!thread) throw new AppError(404, 'Conversation not found');
-    if (thread.buyerId !== actor.userId && thread.sellerId !== actor.userId) {
-      throw new AppError(403, 'You cannot message this conversation');
+      const thread = await MarketplaceThread.findById(String(req.params.threadId));
+      if (!thread) throw new AppError(404, 'Conversation not found');
+      if (thread.buyerId !== actor.userId && thread.sellerId !== actor.userId) {
+        throw new AppError(403, 'You cannot message this conversation');
+      }
+
+      const poster = await User.findById(actor.userId);
+      const senderName = poster?.name?.trim() || 'Resident';
+      const image = file ? storedChatPath(file.filename) : undefined;
+      const message = await MarketplaceMessage.create({
+        threadId: thread._id.toString(),
+        listingId: thread.listingId,
+        senderId: actor.userId,
+        senderName,
+        text: text || (image ? 'Sent a photo' : ''),
+        image,
+      });
+
+      thread.lastMessage = text || 'Photo';
+      thread.lastMessageAt = message.createdAt;
+      if (actor.userId === thread.buyerId) {
+        thread.sellerUnread = 1;
+      } else {
+        thread.buyerUnread = 1;
+      }
+      await thread.save();
+
+      res.status(201).json({
+        success: true,
+        data: {
+          message: messageDto(req, message, actor.userId),
+          thread: threadDto(req, thread, actor.userId),
+        },
+      });
+    } catch (error) {
+      if (req.file) await fs.promises.unlink(req.file.path).catch(() => undefined);
+      next(error);
     }
-
-    const poster = await User.findById(actor.userId);
-    const senderName = poster?.name?.trim() || 'Resident';
-    const message = await MarketplaceMessage.create({
-      threadId: thread._id.toString(),
-      listingId: thread.listingId,
-      senderId: actor.userId,
-      senderName,
-      text,
-    });
-
-    thread.lastMessage = text;
-    thread.lastMessageAt = message.createdAt;
-    if (actor.userId === thread.buyerId) {
-      thread.sellerUnread = 1;
-    } else {
-      thread.buyerUnread = 1;
-    }
-    await thread.save();
-
-    res.status(201).json({
-      success: true,
-      data: {
-        message: message.toSafeJSON(actor.userId),
-        thread: threadDto(req, thread, actor.userId),
-      },
-    });
-  } catch (error) {
-    next(error);
-  }
-});
+  },
+);
 
 router.post(
   '/',
@@ -342,8 +380,8 @@ router.post('/:id/contact', async (req: AuthRequest, res: Response, next: NextFu
       success: true,
       data: {
         thread: threadDto(req, thread, actor.userId),
-        messages: messages.map((item) => item.toSafeJSON(actor.userId)),
-        message: message ? message.toSafeJSON(actor.userId) : undefined,
+        messages: messages.map((item) => messageDto(req, item, actor.userId)),
+        message: message ? messageDto(req, message, actor.userId) : undefined,
       },
     });
   } catch (error) {

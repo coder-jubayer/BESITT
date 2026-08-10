@@ -80,6 +80,16 @@ function mediaKind(mimetype?: string): ComplaintMediaKind {
   return /^video\//i.test(mimetype || '') ? 'video' : 'image';
 }
 
+function commentDto(req: AuthRequest, comment: InstanceType<typeof ComplaintComment>) {
+  const media = (comment.media || [])
+    .map((item) => {
+      const url = publicFileUrl(req, item.path);
+      return url ? { url, kind: item.kind } : null;
+    })
+    .filter((item): item is { url: string; kind: ComplaintMediaKind } => Boolean(item));
+  return comment.toSafeJSON(media);
+}
+
 type ReporterInfo = { phone?: string; email?: string; role?: string };
 
 function complaintDto(
@@ -254,7 +264,7 @@ router.get('/:id', async (req: AuthRequest, res: Response, next: NextFunction) =
       success: true,
       data: {
         complaint: complaintDto(req, complaint, actor.userId, actor.role, reporters.get(complaint.createdBy)),
-        comments: comments.map((item) => item.toSafeJSON()),
+        comments: comments.map((item) => commentDto(req, item)),
       },
     });
   } catch (error) {
@@ -314,7 +324,7 @@ router.patch('/:id', async (req: AuthRequest, res: Response, next: NextFunction)
       message: 'Ticket updated',
       data: {
         complaint: complaintDto(req, complaint, actor.userId, actor.role, reporters.get(complaint.createdBy)),
-        comments: comments.map((item) => item.toSafeJSON()),
+        comments: comments.map((item) => commentDto(req, item)),
       },
     });
   } catch (error) {
@@ -322,35 +332,47 @@ router.patch('/:id', async (req: AuthRequest, res: Response, next: NextFunction)
   }
 });
 
-router.post('/:id/comments', async (req: AuthRequest, res: Response, next: NextFunction) => {
-  try {
-    const actor = req.user!;
-    const complaint = await loadComplaintForActor(actor, req.params.id);
-    if (!canManageComplaints(actor.role) && complaint.createdBy !== actor.userId) {
-      throw new AppError(403, 'You cannot comment on this ticket');
+router.post(
+  '/:id/comments',
+  complaintUpload.array('media', 5),
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const actor = req.user!;
+      const complaint = await loadComplaintForActor(actor, String(req.params.id));
+      if (!canManageComplaints(actor.role) && complaint.createdBy !== actor.userId) {
+        throw new AppError(403, 'You cannot comment on this ticket');
+      }
+
+      const text = String(req.body.text ?? '').trim();
+      const files = (req.files as Express.Multer.File[] | undefined) ?? [];
+      if (text.length < 1 && !files.length) throw new AppError(400, 'Enter a comment or attach a file');
+
+      const poster = await User.findById(actor.userId);
+      const media = files.map((file) => ({
+        path: storedComplaintPath(file.filename),
+        kind: mediaKind(file.mimetype),
+      }));
+      const comment = await ComplaintComment.create({
+        complaintId: complaint._id.toString(),
+        buildingId: complaint.buildingId,
+        authorId: actor.userId,
+        authorName: poster?.name?.trim() || 'Resident',
+        authorRole: actor.role,
+        text: text || (media[0]?.kind === 'video' ? 'Sent a video' : media.length ? 'Sent a photo' : ''),
+        media,
+      });
+
+      res.status(201).json({
+        success: true,
+        message: 'Comment added',
+        data: { comment: commentDto(req, comment) },
+      });
+    } catch (error) {
+      const files = (req.files as Express.Multer.File[] | undefined) ?? [];
+      await Promise.all(files.map((file) => fs.promises.unlink(file.path).catch(() => undefined)));
+      next(error);
     }
-
-    const text = String(req.body.text ?? '').trim();
-    if (text.length < 1) throw new AppError(400, 'Enter a comment');
-
-    const poster = await User.findById(actor.userId);
-    const comment = await ComplaintComment.create({
-      complaintId: complaint._id.toString(),
-      buildingId: complaint.buildingId,
-      authorId: actor.userId,
-      authorName: poster?.name?.trim() || 'Resident',
-      authorRole: actor.role,
-      text,
-    });
-
-    res.status(201).json({
-      success: true,
-      message: 'Comment added',
-      data: { comment: comment.toSafeJSON() },
-    });
-  } catch (error) {
-    next(error);
-  }
-});
+  },
+);
 
 export default router;

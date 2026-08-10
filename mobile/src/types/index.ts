@@ -250,6 +250,7 @@ export interface MarketplaceChatMessage {
   senderId: string;
   senderName: string;
   text: string;
+  image?: string;
   mine: boolean;
   seen?: boolean;
   createdAt: string;
@@ -318,6 +319,7 @@ export interface InboxGroupMessage {
   senderId: string;
   senderName: string;
   text: string;
+  image?: string;
   mine: boolean;
   seen?: boolean;
   createdAt: string;
@@ -334,6 +336,7 @@ export interface InboxChatMessage {
   senderId: string;
   senderName: string;
   text: string;
+  image?: string;
   mine: boolean;
   seen?: boolean;
   createdAt: string;
@@ -440,6 +443,7 @@ export interface ComplaintComment {
   authorName: string;
   authorRole: string;
   text: string;
+  media?: ComplaintMedia[];
   isSystem?: boolean;
   createdAt: string;
 }

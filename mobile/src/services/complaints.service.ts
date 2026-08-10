@@ -76,9 +76,26 @@ export async function updateComplaint(
   return data.data;
 }
 
-export async function addComplaintComment(id: string, text: string): Promise<ComplaintComment> {
-  const { data } = await apiClient.post<ApiResponse<{ comment: ComplaintComment }>>(`/complaints/${id}/comments`, {
-    text,
+export async function addComplaintComment(
+  id: string,
+  text: string,
+  media: Array<{ uri: string; name?: string; type?: string }> = [],
+): Promise<ComplaintComment> {
+  const form = new FormData();
+  if (text.trim()) form.append('text', text.trim());
+  media.forEach((file, index) => {
+    form.append('media', {
+      uri: file.uri,
+      name: file.name || `media-${index + 1}`,
+      type: file.type || 'image/jpeg',
+    } as unknown as Blob);
+  });
+  const { data } = await apiClient.post<ApiResponse<{ comment: ComplaintComment }>>(`/complaints/${id}/comments`, form, {
+    headers: {
+      Authorization: getAuthToken() ? `Bearer ${getAuthToken()}` : undefined,
+      'Content-Type': 'multipart/form-data',
+    },
+    timeout: 90000,
   });
   if (!data.success || !data.data?.comment) {
     throw new Error(data.message ?? 'Failed to add comment');

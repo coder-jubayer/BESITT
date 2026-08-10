@@ -47,10 +47,27 @@ export async function fetchInboxThread(threadId: string): Promise<InboxThreadDet
 export async function sendInboxMessage(
   threadId: string,
   text: string,
+  image?: { uri: string; name?: string; type?: string },
 ): Promise<{ message: InboxChatMessage; thread: InboxThread }> {
+  const form = new FormData();
+  if (text.trim()) form.append('text', text.trim());
+  if (image) {
+    form.append('image', {
+      uri: image.uri,
+      name: image.name || 'photo.jpg',
+      type: image.type || 'image/jpeg',
+    } as unknown as Blob);
+  }
   const { data } = await apiClient.post<ApiResponse<{ message: InboxChatMessage; thread: InboxThread }>>(
     `/inbox/threads/${threadId}/messages`,
-    { text },
+    form,
+    {
+      headers: {
+        Authorization: getAuthToken() ? `Bearer ${getAuthToken()}` : undefined,
+        'Content-Type': 'multipart/form-data',
+      },
+      timeout: 60000,
+    },
   );
   if (!data.success || !data.data?.message || !data.data.thread) {
     throw new Error(data.message ?? 'Failed to send message');
@@ -127,10 +144,27 @@ export async function addInboxGroupMembers(groupId: string, memberIds: string[])
 export async function sendInboxGroupMessage(
   groupId: string,
   text: string,
+  image?: { uri: string; name?: string; type?: string },
 ): Promise<{ message: InboxGroupMessage; group: InboxGroup }> {
+  const form = new FormData();
+  if (text.trim()) form.append('text', text.trim());
+  if (image) {
+    form.append('image', {
+      uri: image.uri,
+      name: image.name || 'photo.jpg',
+      type: image.type || 'image/jpeg',
+    } as unknown as Blob);
+  }
   const { data } = await apiClient.post<ApiResponse<{ message: InboxGroupMessage; group: InboxGroup }>>(
     `/inbox/groups/${groupId}/messages`,
-    { text },
+    form,
+    {
+      headers: {
+        Authorization: getAuthToken() ? `Bearer ${getAuthToken()}` : undefined,
+        'Content-Type': 'multipart/form-data',
+      },
+      timeout: 60000,
+    },
   );
   if (!data.success || !data.data?.message || !data.data.group) {
     throw new Error(data.message ?? 'Failed to send message');

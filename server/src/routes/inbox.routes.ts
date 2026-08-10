@@ -14,14 +14,40 @@ import { ROLE_LABELS, isAppAdmin, UserRole } from '../constants/roles';
 import {
   ensureUploadDirs,
   groupsUploadDir,
+  chatUploadDir,
   publicFileUrl,
   removeStoredFiles,
   storedGroupPath,
+  storedChatPath,
 } from '../utils/uploads';
 
 const router = Router();
 router.use(requireAuth);
 ensureUploadDirs();
+
+const chatPhotoStorage = multer.diskStorage({
+  destination: (_req, _file, cb) => {
+    ensureUploadDirs();
+    cb(null, chatUploadDir);
+  },
+  filename: (_req, file, cb) => {
+    const ext = path.extname(file.originalname || '').toLowerCase() || '.jpg';
+    const safeExt = ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.heic'].includes(ext) ? ext : '.jpg';
+    cb(null, `${Date.now()}-${Math.random().toString(36).slice(2, 10)}${safeExt}`);
+  },
+});
+
+const chatPhotoUpload = multer({
+  storage: chatPhotoStorage,
+  limits: { fileSize: 5 * 1024 * 1024, files: 1 },
+  fileFilter: (_req, file, cb) => {
+    if (!/^image\//i.test(file.mimetype || '')) {
+      cb(new AppError(400, 'Only photos are allowed'));
+      return;
+    }
+    cb(null, true);
+  },
+});
 
 const groupPhotoStorage = multer.diskStorage({
   destination: (_req, _file, cb) => {
@@ -52,6 +78,19 @@ function groupDto(req: AuthRequest, group: IInboxGroupDocument, actorId: string)
     ...group.toSafeJSON(actorId),
     photo: publicFileUrl(req, group.photo),
   };
+}
+
+function inboxMessageDto(req: AuthRequest, message: InstanceType<typeof InboxMessage>, actorId: string) {
+  return message.toSafeJSON(actorId, publicFileUrl(req, message.image));
+}
+
+function groupMessageDto(
+  req: AuthRequest,
+  message: InstanceType<typeof InboxGroupMessage>,
+  actorId: string,
+  memberIds: string[],
+) {
+  return message.toSafeJSON(actorId, memberIds, publicFileUrl(req, message.image));
 }
 
 export type InboxCategory = 'committee' | 'resident' | 'guard';
@@ -247,7 +286,7 @@ router.post('/threads', async (req: AuthRequest, res: Response, next: NextFuncti
       success: true,
       data: {
         thread: thread.toSafeJSON(actor.userId),
-        messages: messages.map((item) => item.toSafeJSON(actor.userId)),
+        messages: messages.map((item) => inboxMessageDto(req, item, actor.userId)),
       },
     });
   } catch (error) {
@@ -271,7 +310,7 @@ router.get('/threads/:threadId', async (req: AuthRequest, res: Response, next: N
       success: true,
       data: {
         thread: thread.toSafeJSON(actor.userId),
-        messages: messages.map((item) => item.toSafeJSON(actor.userId)),
+        messages: messages.map((item) => inboxMessageDto(req, item, actor.userId)),
       },
     });
   } catch (error) {
@@ -279,43 +318,51 @@ router.get('/threads/:threadId', async (req: AuthRequest, res: Response, next: N
   }
 });
 
-router.post('/threads/:threadId/messages', async (req: AuthRequest, res: Response, next: NextFunction) => {
-  try {
-    const actor = req.user!;
-    const text = String(req.body.text ?? '').trim();
-    if (text.length < 1) throw new AppError(400, 'Message cannot be empty');
+router.post(
+  '/threads/:threadId/messages',
+  chatPhotoUpload.single('image'),
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const actor = req.user!;
+      const text = String(req.body.text ?? '').trim();
+      const file = req.file;
+      if (text.length < 1 && !file) throw new AppError(400, 'Message cannot be empty');
 
-    const thread = await loadThreadForActor(String(req.params.threadId), actor.userId, actor.role);
-    if (thread.userA !== actor.userId && thread.userB !== actor.userId) {
-      throw new AppError(403, 'You cannot message this conversation');
+      const thread = await loadThreadForActor(String(req.params.threadId), actor.userId, actor.role);
+      if (thread.userA !== actor.userId && thread.userB !== actor.userId) {
+        throw new AppError(403, 'You cannot message this conversation');
+      }
+
+      const poster = await User.findById(actor.userId);
+      const senderName = poster?.name?.trim() || 'Resident';
+      const image = file ? storedChatPath(file.filename) : undefined;
+      const message = await InboxMessage.create({
+        threadId: thread._id.toString(),
+        senderId: actor.userId,
+        senderName,
+        text: text || (image ? 'Sent a photo' : ''),
+        image,
+      });
+
+      thread.lastMessage = text || 'Photo';
+      thread.lastMessageAt = message.createdAt;
+      if (actor.userId === thread.userA) thread.userBUnread = 1;
+      else thread.userAUnread = 1;
+      await thread.save();
+
+      res.status(201).json({
+        success: true,
+        data: {
+          message: inboxMessageDto(req, message, actor.userId),
+          thread: thread.toSafeJSON(actor.userId),
+        },
+      });
+    } catch (error) {
+      if (req.file) await fs.promises.unlink(req.file.path).catch(() => undefined);
+      next(error);
     }
-
-    const poster = await User.findById(actor.userId);
-    const senderName = poster?.name?.trim() || 'Resident';
-    const message = await InboxMessage.create({
-      threadId: thread._id.toString(),
-      senderId: actor.userId,
-      senderName,
-      text,
-    });
-
-    thread.lastMessage = text;
-    thread.lastMessageAt = message.createdAt;
-    if (actor.userId === thread.userA) thread.userBUnread = 1;
-    else thread.userAUnread = 1;
-    await thread.save();
-
-    res.status(201).json({
-      success: true,
-      data: {
-        message: message.toSafeJSON(actor.userId),
-        thread: thread.toSafeJSON(actor.userId),
-      },
-    });
-  } catch (error) {
-    next(error);
-  }
-});
+  },
+);
 
 async function loadGroupForActor(groupId: string, actorId: string, actorRole: string) {
   const group = await InboxGroup.findById(groupId);
@@ -422,7 +469,7 @@ router.get('/groups/:groupId', async (req: AuthRequest, res: Response, next: Nex
       success: true,
       data: {
         group: groupDto(req, group, actor.userId),
-        messages: messages.map((item) => item.toSafeJSON(actor.userId, group.memberIds)),
+        messages: messages.map((item) => groupMessageDto(req, item, actor.userId, group.memberIds)),
       },
     });
   } catch (error) {
@@ -505,38 +552,46 @@ router.post('/groups/:groupId/members', async (req: AuthRequest, res: Response, 
   }
 });
 
-router.post('/groups/:groupId/messages', async (req: AuthRequest, res: Response, next: NextFunction) => {
-  try {
-    const actor = req.user!;
-    const text = String(req.body.text ?? '').trim();
-    if (text.length < 1) throw new AppError(400, 'Message cannot be empty');
+router.post(
+  '/groups/:groupId/messages',
+  chatPhotoUpload.single('image'),
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const actor = req.user!;
+      const text = String(req.body.text ?? '').trim();
+      const file = req.file;
+      if (text.length < 1 && !file) throw new AppError(400, 'Message cannot be empty');
 
-    const group = await loadGroupForActor(String(req.params.groupId), actor.userId, actor.role);
-    const poster = await User.findById(actor.userId);
-    const senderName = poster?.name?.trim() || 'Resident';
-    const message = await InboxGroupMessage.create({
-      groupId: group._id.toString(),
-      senderId: actor.userId,
-      senderName,
-      text,
-      seenBy: [actor.userId],
-    });
+      const group = await loadGroupForActor(String(req.params.groupId), actor.userId, actor.role);
+      const poster = await User.findById(actor.userId);
+      const senderName = poster?.name?.trim() || 'Resident';
+      const image = file ? storedChatPath(file.filename) : undefined;
+      const message = await InboxGroupMessage.create({
+        groupId: group._id.toString(),
+        senderId: actor.userId,
+        senderName,
+        text: text || (image ? 'Sent a photo' : ''),
+        image,
+        seenBy: [actor.userId],
+      });
 
-    group.lastMessage = text;
-    group.lastMessageAt = message.createdAt;
-    group.unreadIds = group.memberIds.filter((id) => id !== actor.userId);
-    await group.save();
+      group.lastMessage = text || 'Photo';
+      group.lastMessageAt = message.createdAt;
+      group.unreadIds = group.memberIds.filter((id) => id !== actor.userId);
+      await group.save();
 
-    res.status(201).json({
-      success: true,
-      data: {
-        message: message.toSafeJSON(actor.userId, group.memberIds),
-        group: groupDto(req, group, actor.userId),
-      },
-    });
-  } catch (error) {
-    next(error);
-  }
-});
+      res.status(201).json({
+        success: true,
+        data: {
+          message: groupMessageDto(req, message, actor.userId, group.memberIds),
+          group: groupDto(req, group, actor.userId),
+        },
+      });
+    } catch (error) {
+      if (req.file) await fs.promises.unlink(req.file.path).catch(() => undefined);
+      next(error);
+    }
+  },
+);
 
 export default router;
