@@ -3,6 +3,9 @@ import { Building } from '../models/Building';
 import { Notice } from '../models/Notice';
 import { Expense } from '../models/Expense';
 import { DirectoryContact } from '../models/DirectoryContact';
+import { MarketplaceListing } from '../models/MarketplaceListing';
+import { Election } from '../models/Election';
+import { ElectionCandidate } from '../models/ElectionCandidate';
 
 const ADMIN_EMAIL = 'admin@bm.com';
 const ADMIN_PASSWORD = 'admin123';
@@ -45,6 +48,9 @@ export async function seedAdminUser(): Promise<void> {
     });
     console.log(`Committee user seeded (${committeeEmail})`);
   }
+
+  await seedSampleMarketplace(defaultBuilding._id.toString());
+  await seedSampleElection(defaultBuilding._id.toString());
 
   const existing = await User.findOne({ email: ADMIN_EMAIL });
   if (existing) {
@@ -137,4 +143,89 @@ async function seedSampleDirectory(buildingId: string): Promise<void> {
   ]);
 
   console.log('Sample directory contacts seeded');
+}
+
+async function seedSampleMarketplace(buildingId: string): Promise<void> {
+  const count = await MarketplaceListing.countDocuments({ buildingId });
+  if (count > 0) return;
+
+  const committee = await User.findOne({ email: 'committee@bm.com' });
+  const resident = await User.findOne({ email: 'resident1@bm.com' });
+  const seller = resident || committee;
+  if (!seller) return;
+
+  await MarketplaceListing.insertMany([
+    {
+      buildingId,
+      title: 'Wooden study table',
+      description: 'Solid wood study table with a matching chair. Barely used, pickup from the building.',
+      price: 4500,
+      images: [],
+      sellerId: seller._id.toString(),
+      sellerName: seller.name,
+      sellerPhone: seller.phone || '+8801711000099',
+      sellerEmail: seller.email,
+    },
+    {
+      buildingId,
+      title: 'Kids bicycle',
+      description: '16-inch kids bike in good condition. Suitable for ages 4–7.',
+      price: 2800,
+      images: [],
+      sellerId: seller._id.toString(),
+      sellerName: seller.name,
+      sellerPhone: seller.phone || '+8801711000099',
+      sellerEmail: seller.email,
+    },
+  ]);
+
+  console.log('Sample marketplace listings seeded');
+}
+
+async function seedSampleElection(buildingId: string): Promise<void> {
+  const count = await Election.countDocuments({ buildingId });
+  if (count > 0) return;
+
+  const committee = await User.findOne({ email: 'committee@bm.com' });
+  const now = new Date();
+  const startsAt = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+  const endsAt = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+
+  const election = await Election.create({
+    buildingId,
+    title: 'Committee Election 2026',
+    position: 'President',
+    description: 'Select one candidate for President.',
+    startsAt,
+    endsAt,
+    showResults: true,
+    createdBy: committee?._id.toString() || 'seed',
+    createdByName: committee?.name || 'Committee',
+  });
+
+  await ElectionCandidate.insertMany([
+    {
+      electionId: election._id.toString(),
+      buildingId,
+      name: 'Robert Chen',
+      unitNumber: 'A-104',
+      createdBy: election.createdBy,
+    },
+    {
+      electionId: election._id.toString(),
+      buildingId,
+      name: 'Sarah Jenkins',
+      unitNumber: 'B-204',
+      createdBy: election.createdBy,
+    },
+    {
+      electionId: election._id.toString(),
+      buildingId,
+      name: 'Michael Ross',
+      unitNumber: 'C-301',
+      createdBy: election.createdBy,
+    },
+  ]);
+
+  console.log('Sample election seeded');
 }

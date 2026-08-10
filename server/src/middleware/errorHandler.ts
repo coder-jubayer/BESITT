@@ -25,6 +25,15 @@ export function errorHandler(
     return;
   }
 
+  if ((err as { name?: string }).name === 'MulterError') {
+    const code = (err as { code?: string }).code;
+    res.status(400).json({
+      success: false,
+      message: code === 'LIMIT_FILE_SIZE' ? 'Each image must be under 5MB' : err.message || 'Upload failed',
+    });
+    return;
+  }
+
   const mongoErr = err as { code?: number; keyPattern?: Record<string, unknown> };
   if (mongoErr.code === 11000) {
     const field = mongoErr.keyPattern ? Object.keys(mongoErr.keyPattern)[0] : 'value';

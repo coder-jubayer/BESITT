@@ -37,6 +37,18 @@ export function canManageDirectory(role?: UserRole | null): boolean {
   return role === 'committee' || isBuildingAdmin(role) || isAppAdmin(role);
 }
 
+export function canCreateListing(role?: UserRole | null): boolean {
+  return role === 'resident' || role === 'committee' || isBuildingAdmin(role) || isAppAdmin(role);
+}
+
+export function canManageElections(role?: UserRole | null): boolean {
+  return role === 'committee' || isBuildingAdmin(role) || isAppAdmin(role);
+}
+
+export function canCastVote(role?: UserRole | null): boolean {
+  return role === 'resident';
+}
+
 export function isResident(role?: UserRole | null): boolean {
   return role === 'resident';
 }
@@ -183,6 +195,102 @@ export interface DirectoryContact {
 export interface DirectoryListResponse {
   contacts: DirectoryContact[];
   types: DirectoryTypeOption[];
+  canManage: boolean;
+  buildings?: Building[];
+}
+
+export interface MarketplaceListing {
+  id: string;
+  buildingId: string;
+  title: string;
+  description: string;
+  price: number;
+  images: string[];
+  sellerId: string;
+  sellerName: string;
+  sellerPhone?: string;
+  sellerEmail?: string;
+  status?: string;
+  createdAt?: string;
+  isMine?: boolean;
+  canDelete?: boolean;
+}
+
+export interface MarketplaceListResponse {
+  listings: MarketplaceListing[];
+  canCreate: boolean;
+  buildings?: Building[];
+}
+
+export interface MarketplaceThread {
+  id: string;
+  listingId: string;
+  listingTitle: string;
+  listingImage?: string;
+  otherId: string;
+  otherName: string;
+  lastMessage?: string;
+  lastMessageAt?: string;
+  unread: number;
+  isSeller: boolean;
+}
+
+export interface MarketplaceChatMessage {
+  id: string;
+  threadId: string;
+  listingId: string;
+  senderId: string;
+  senderName: string;
+  text: string;
+  mine: boolean;
+  createdAt: string;
+}
+
+export interface MarketplaceThreadDetail {
+  thread: MarketplaceThread;
+  messages: MarketplaceChatMessage[];
+}
+
+export type ElectionStatus = 'upcoming' | 'open' | 'closed';
+
+export interface ElectionCandidate {
+  id: string;
+  electionId: string;
+  name: string;
+  unitNumber?: string;
+  image?: string;
+  votes?: number;
+  percent?: number;
+}
+
+export interface ElectionSummary {
+  id: string;
+  buildingId: string;
+  title: string;
+  position: string;
+  description?: string;
+  startsAt: string;
+  endsAt: string;
+  showResults: boolean;
+  status: ElectionStatus;
+  periodLabel: string;
+  candidateCount: number;
+  totalVotes?: number;
+  canManage: boolean;
+  canVote: boolean;
+  hasVoted: boolean;
+  myCandidateId?: string;
+  resultsVisible: boolean;
+  createdByName?: string;
+}
+
+export interface ElectionDetailResponse {
+  election: ElectionSummary;
+  candidates: ElectionCandidate[];
+}
+
+export interface ElectionsListResponse {
+  elections: ElectionSummary[];
   canManage: boolean;
   buildings?: Building[];
 }

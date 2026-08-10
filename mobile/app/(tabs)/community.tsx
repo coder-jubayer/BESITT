@@ -4,17 +4,22 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { PageHeader } from '../../src/components/PageHeader';
 import { fetchNotices } from '../../src/services/notices.service';
+import { fetchElections, openElectionCount } from '../../src/services/elections.service';
 import { colors, spacing, borderRadius, shadows } from '../../src/theme';
 
 export default function CommunityScreen() {
   const router = useRouter();
   const [newCount, setNewCount] = useState(0);
+  const [openVotes, setOpenVotes] = useState(0);
 
   useFocusEffect(
     useCallback(() => {
       void fetchNotices()
         .then((data) => setNewCount(data.notices.filter((n) => n.isNew).length))
         .catch(() => setNewCount(0));
+      void fetchElections()
+        .then((data) => setOpenVotes(openElectionCount(data.elections)))
+        .catch(() => setOpenVotes(0));
     }, []),
   );
 
@@ -49,7 +54,9 @@ export default function CommunityScreen() {
               <Ionicons name="checkbox" size={20} color={colors.success} />
             </View>
             <Text style={styles.cardTitle}>Elections</Text>
-            <Text style={styles.cardDesc}>Active voting</Text>
+            <Text style={styles.cardDesc}>
+              {openVotes > 0 ? `${openVotes} open election${openVotes === 1 ? '' : 's'}` : 'View elections'}
+            </Text>
           </Pressable>
         </View>
       </ScrollView>

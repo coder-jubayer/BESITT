@@ -2,7 +2,15 @@ import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { env } from '../config/env';
 import { AppError } from './errorHandler';
-import { canManageDirectory, canManageExpenses, canManageUsers, canPostNotices, UserRole } from '../constants/roles';
+import {
+  canCreateListing,
+  canManageDirectory,
+  canManageElections,
+  canManageExpenses,
+  canManageUsers,
+  canPostNotices,
+  UserRole,
+} from '../constants/roles';
 
 export interface AuthPayload {
   userId: string;
@@ -65,6 +73,22 @@ export function requireExpenseManager(req: AuthRequest, _res: Response, next: Ne
 export function requireDirectoryManager(req: AuthRequest, _res: Response, next: NextFunction): void {
   if (!req.user || !canManageDirectory(req.user.role)) {
     next(new AppError(403, 'Only building admin or committee can manage the directory'));
+    return;
+  }
+  next();
+}
+
+export function requireListingCreator(req: AuthRequest, _res: Response, next: NextFunction): void {
+  if (!req.user || !canCreateListing(req.user.role)) {
+    next(new AppError(403, 'Only building admin, committee, or residents can create listings'));
+    return;
+  }
+  next();
+}
+
+export function requireElectionManager(req: AuthRequest, _res: Response, next: NextFunction): void {
+  if (!req.user || !canManageElections(req.user.role)) {
+    next(new AppError(403, 'Only committee and building admins can manage elections'));
     return;
   }
   next();
