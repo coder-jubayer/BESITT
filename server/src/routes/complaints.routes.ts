@@ -80,7 +80,15 @@ function mediaKind(mimetype?: string): ComplaintMediaKind {
   return /^video\//i.test(mimetype || '') ? 'video' : 'image';
 }
 
-function complaintDto(req: AuthRequest, complaint: IComplaintDocument, actorId: string, actorRole: string) {
+type ReporterInfo = { phone?: string; email?: string; role?: string };
+
+function complaintDto(
+  req: AuthRequest,
+  complaint: IComplaintDocument,
+  actorId: string,
+  actorRole: string,
+  reporter?: ReporterInfo | null,
+) {
   const media = (complaint.media || [])
     .map((item) => {
       const url = publicFileUrl(req, item.path);
@@ -95,7 +103,22 @@ function complaintDto(req: AuthRequest, complaint: IComplaintDocument, actorId: 
     isMine: complaint.createdBy === actorId,
     canManage: canManageComplaints(actorRole),
     canComment: canManageComplaints(actorRole) || complaint.createdBy === actorId,
+    createdByPhone: reporter?.phone || undefined,
+    createdByEmail: reporter?.email || undefined,
+    createdByRole: reporter?.role || undefined,
   };
+}
+
+async function reportersByIds(ids: string[]) {
+  const unique = [...new Set(ids.filter(Boolean))];
+  if (!unique.length) return new Map<string, ReporterInfo>();
+  const users = await User.find({ _id: { $in: unique } });
+  return new Map(
+    users.map((user) => [
+      user._id.toString(),
+      { phone: user.phone, email: user.email, role: user.role },
+    ]),
+  );
 }
 
 async function loadComplaintForActor(
@@ -137,11 +160,14 @@ router.get('/', async (req: AuthRequest, res: Response, next: NextFunction) => {
     const complaints = buildingId
       ? await Complaint.find(filter).sort({ createdAt: -1 }).limit(200)
       : [];
+    const reporters = await reportersByIds(complaints.map((item) => item.createdBy));
 
     res.json({
       success: true,
       data: {
-        complaints: complaints.map((item) => complaintDto(req, item, actor.userId, actor.role)),
+        complaints: complaints.map((item) =>
+          complaintDto(req, item, actor.userId, actor.role, reporters.get(item.createdBy)),
+        ),
         categories: COMPLAINT_CATEGORIES.map((item) => ({ ...item })),
         statuses: COMPLAINT_STATUSES.map((value) => ({ value, label: complaintStatusLabel(value) })),
         canCreate: canCreateComplaint(actor.role),
@@ -199,7 +225,13 @@ router.post(
       res.status(201).json({
         success: true,
         message: 'Ticket submitted',
-        data: { complaint: complaintDto(req, complaint, actor.userId, actor.role) },
+        data: {
+          complaint: complaintDto(req, complaint, actor.userId, actor.role, {
+            phone: poster?.phone,
+            email: poster?.email,
+            role: poster?.role,
+          }),
+        },
       });
     } catch (error) {
       const files = (req.files as Express.Multer.File[] | undefined) ?? [];
@@ -213,12 +245,15 @@ router.get('/:id', async (req: AuthRequest, res: Response, next: NextFunction) =
   try {
     const actor = req.user!;
     const complaint = await loadComplaintForActor(actor, req.params.id);
-    const comments = await ComplaintComment.find({ complaintId: complaint._id.toString() }).sort({ createdAt: 1 });
+    const [comments, reporters] = await Promise.all([
+      ComplaintComment.find({ complaintId: complaint._id.toString() }).sort({ createdAt: 1 }),
+      reportersByIds([complaint.createdBy]),
+    ]);
 
     res.json({
       success: true,
       data: {
-        complaint: complaintDto(req, complaint, actor.userId, actor.role),
+        complaint: complaintDto(req, complaint, actor.userId, actor.role, reporters.get(complaint.createdBy)),
         comments: comments.map((item) => item.toSafeJSON()),
       },
     });
@@ -270,12 +305,15 @@ router.patch('/:id', async (req: AuthRequest, res: Response, next: NextFunction)
       });
     }
 
-    const comments = await ComplaintComment.find({ complaintId: complaint._id.toString() }).sort({ createdAt: 1 });
+    const [comments, reporters] = await Promise.all([
+      ComplaintComment.find({ complaintId: complaint._id.toString() }).sort({ createdAt: 1 }),
+      reportersByIds([complaint.createdBy]),
+    ]);
     res.json({
       success: true,
       message: 'Ticket updated',
       data: {
-        complaint: complaintDto(req, complaint, actor.userId, actor.role),
+        complaint: complaintDto(req, complaint, actor.userId, actor.role, reporters.get(complaint.createdBy)),
         comments: comments.map((item) => item.toSafeJSON()),
       },
     });

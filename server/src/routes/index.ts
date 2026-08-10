@@ -8,6 +8,7 @@ import directoryRoutes from './directory.routes';
 import marketplaceRoutes from './marketplace.routes';
 import electionsRoutes from './elections.routes';
 import complaintsRoutes from './complaints.routes';
+import inboxRoutes from './inbox.routes';
 
 const router = Router();
 
@@ -20,6 +21,7 @@ router.use('/directory', directoryRoutes);
 router.use('/marketplace', marketplaceRoutes);
 router.use('/elections', electionsRoutes);
 router.use('/complaints', complaintsRoutes);
+router.use('/inbox', inboxRoutes);
 
 router.get('/', (_req, res) => {
   res.json({

@@ -251,7 +251,56 @@ export interface MarketplaceChatMessage {
   senderName: string;
   text: string;
   mine: boolean;
+  seen?: boolean;
   createdAt: string;
+}
+
+export type InboxCategory = 'committee' | 'resident' | 'guard';
+
+export interface InboxContact {
+  id: string;
+  name: string;
+  role: UserRole | string;
+  roleLabel: string;
+  phone?: string;
+  email?: string;
+  unitNumber?: string;
+  threadId?: string;
+  lastMessage?: string;
+  lastMessageAt?: string;
+  unread?: number;
+}
+
+export interface InboxDirectoryResponse {
+  buildingId: string;
+  categories: Array<{ value: InboxCategory; label: string; count: number }>;
+  contacts: Record<InboxCategory, InboxContact[]>;
+}
+
+export interface InboxThread {
+  id: string;
+  otherId: string;
+  otherName: string;
+  otherRole: string;
+  lastMessage?: string;
+  lastMessageAt?: string;
+  unread: number;
+}
+
+export interface InboxChatMessage {
+  id: string;
+  threadId: string;
+  senderId: string;
+  senderName: string;
+  text: string;
+  mine: boolean;
+  seen?: boolean;
+  createdAt: string;
+}
+
+export interface InboxThreadDetail {
+  thread: InboxThread;
+  messages: InboxChatMessage[];
 }
 
 export interface MarketplaceThreadDetail {
@@ -332,6 +381,9 @@ export interface ComplaintTicket {
   media: ComplaintMedia[];
   createdBy: string;
   createdByName: string;
+  createdByPhone?: string;
+  createdByEmail?: string;
+  createdByRole?: string;
   unitNumber?: string;
   createdAt: string;
   updatedAt?: string;

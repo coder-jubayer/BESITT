@@ -41,29 +41,67 @@ export async function seedAdminUser(): Promise<void> {
   const committeeEmail = 'committee@bm.com';
   const existingCommittee = await User.findOne({ email: committeeEmail });
   if (!existingCommittee) {
-    await User.create({
-      name: 'Committee Member',
-      email: committeeEmail,
-      password: 'committee123',
-      role: 'committee',
-      buildingId: defaultBuilding._id.toString(),
-    });
-    console.log(`Committee user seeded (${committeeEmail})`);
+    try {
+      await User.create({
+        name: 'Committee Member',
+        email: committeeEmail,
+        password: 'committee123',
+        role: 'committee',
+        phone: '+8801711000088',
+        buildingId: defaultBuilding._id.toString(),
+      });
+      console.log(`Committee user seeded (${committeeEmail})`);
+    } catch (error) {
+      if ((error as { code?: number }).code !== 11000) throw error;
+    }
+  } else if (!existingCommittee.phone) {
+    await User.updateOne({ email: committeeEmail }, { $set: { phone: '+8801711000088' } });
   }
 
   const residentEmail = 'resident1@bm.com';
   const existingResident = await User.findOne({ email: residentEmail });
   if (!existingResident) {
-    await User.create({
-      name: 'Resident One',
-      email: residentEmail,
-      password: 'resident123',
-      role: 'resident',
-      unitNumber: 'A-101',
-      buildingId: defaultBuilding._id.toString(),
-    });
-    console.log(`Resident user seeded (${residentEmail})`);
+    try {
+      await User.create({
+        name: 'Resident One',
+        email: residentEmail,
+        password: 'resident123',
+        role: 'resident',
+        phone: '+8801711000099',
+        unitNumber: 'A-101',
+        buildingId: defaultBuilding._id.toString(),
+      });
+      console.log(`Resident user seeded (${residentEmail})`);
+    } catch (error) {
+      if ((error as { code?: number }).code !== 11000) throw error;
+    }
+  } else if (!existingResident.phone) {
+    await User.updateOne({ email: residentEmail }, { $set: { phone: '+8801711000099' } });
   }
+
+  const guardEmail = 'guard@bm.com';
+  const existingGuard = await User.findOne({ email: guardEmail });
+  if (!existingGuard) {
+    try {
+      await User.create({
+        name: 'Security Guard',
+        email: guardEmail,
+        password: 'guard123',
+        role: 'guard',
+        phone: '+8801711000077',
+        buildingId: defaultBuilding._id.toString(),
+      });
+      console.log(`Guard user seeded (${guardEmail})`);
+    } catch (error) {
+      if ((error as { code?: number }).code !== 11000) throw error;
+    }
+  } else if (!existingGuard.phone) {
+    await User.updateOne({ email: guardEmail }, { $set: { phone: '+8801711000077' } });
+  }
+
+  await User.updateOne({ email: committeeEmail }, { $set: { phone: '+8801711000088' } });
+  await User.updateOne({ email: residentEmail }, { $set: { phone: '+8801711000099' } });
+  await User.updateOne({ email: guardEmail }, { $set: { phone: '+8801711000077' } });
 
   await seedSampleMarketplace(defaultBuilding._id.toString());
   await seedSampleElection(defaultBuilding._id.toString());

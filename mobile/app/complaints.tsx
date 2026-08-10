@@ -35,6 +35,8 @@ import {
   ComplaintStatus,
   ComplaintStatusOption,
   ComplaintTicket,
+  ROLE_LABELS,
+  UserRole,
   canCreateComplaint,
   canManageComplaints,
   isAppAdmin,
@@ -267,7 +269,58 @@ export default function ComplaintsScreen() {
             {' · '}
             {formatNoticeDate(selected.createdAt)}
           </Text>
-          <Text style={styles.reporter}>Reported by {selected.createdByName}</Text>
+          {!canManage ? <Text style={styles.reporter}>Reported by {selected.createdByName}</Text> : null}
+
+          {canManage ? (
+            <View style={styles.residentCard}>
+              <View style={styles.residentTop}>
+                <View style={styles.residentAvatar}>
+                  <Ionicons name="person" size={22} color={colors.primary} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.residentName}>{selected.createdByName}</Text>
+                  <Text style={styles.residentMeta}>
+                    {selected.createdByRole
+                      ? ROLE_LABELS[selected.createdByRole as UserRole] ?? selected.createdByRole
+                      : 'Resident'}
+                    {selected.unitNumber ? ` · Apt ${selected.unitNumber}` : ''}
+                  </Text>
+                  {selected.createdByPhone ? (
+                    <Text style={styles.residentPhone}>{selected.createdByPhone}</Text>
+                  ) : (
+                    <Text style={styles.residentHint}>No phone on file</Text>
+                  )}
+                  {selected.createdByEmail ? (
+                    <Text style={styles.residentHint}>{selected.createdByEmail}</Text>
+                  ) : null}
+                </View>
+              </View>
+              <View style={styles.residentActions}>
+                {selected.createdByPhone ? (
+                  <Pressable
+                    style={styles.contactBtn}
+                    onPress={() => void Linking.openURL(`tel:${selected.createdByPhone!.replace(/[^\d+]/g, '')}`)}
+                  >
+                    <Ionicons name="call" size={16} color={colors.primary} />
+                    <Text style={styles.contactBtnText}>Call</Text>
+                  </Pressable>
+                ) : null}
+                <Pressable
+                  style={[styles.contactBtn, styles.contactBtnPrimary]}
+                  onPress={() =>
+                    router.push({
+                      pathname: '/messages',
+                      params: { tab: 'inbox', userId: selected.createdBy },
+                    })
+                  }
+                >
+                  <Ionicons name="chatbubble-ellipses" size={16} color={colors.white} />
+                  <Text style={[styles.contactBtnText, { color: colors.white }]}>Message</Text>
+                </Pressable>
+              </View>
+            </View>
+          ) : null}
+
           <Text style={styles.description}>{selected.description}</Text>
 
           {selected.media.length ? (
@@ -428,8 +481,19 @@ export default function ComplaintsScreen() {
                 </Text>
                 <Text style={styles.metaText}>{formatNoticeDate(ticket.createdAt)}</Text>
               </View>
-              {canManage && !ticket.isMine ? (
-                <Text style={styles.reporterLine}>{ticket.createdByName}</Text>
+              {canManage ? (
+                <View style={styles.listResident}>
+                  <Ionicons name="person-circle-outline" size={16} color={colors.primary} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.listResidentName}>
+                      {ticket.createdByName}
+                      {ticket.unitNumber ? ` · Apt ${ticket.unitNumber}` : ''}
+                    </Text>
+                    {ticket.createdByPhone ? (
+                      <Text style={styles.listResidentPhone}>{ticket.createdByPhone}</Text>
+                    ) : null}
+                  </View>
+                </View>
               ) : null}
             </Pressable>
           );
@@ -549,6 +613,53 @@ const styles = StyleSheet.create({
   meta: { flexDirection: 'row', justifyContent: 'space-between' },
   metaText: { fontSize: 13, color: colors.textSecondary },
   reporterLine: { marginTop: 8, fontSize: 12, color: colors.textMuted },
+  listResident: {
+    marginTop: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: colors.primaryLight,
+    borderRadius: borderRadius.md,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  listResidentName: { fontSize: 12, fontWeight: '700', color: colors.text },
+  listResidentPhone: { fontSize: 12, color: colors.textSecondary, marginTop: 1 },
+  residentCard: {
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius['2xl'],
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.md,
+    gap: 12,
+    ...shadows.sm,
+  },
+  residentTop: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  residentAvatar: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: colors.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  residentName: { fontSize: 16, fontWeight: '700', color: colors.text },
+  residentMeta: { fontSize: 13, color: colors.textSecondary, marginTop: 2 },
+  residentPhone: { fontSize: 14, fontWeight: '700', color: colors.text, marginTop: 4 },
+  residentHint: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
+  residentActions: { flexDirection: 'row', gap: 8 },
+  contactBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 12,
+    borderRadius: borderRadius.md,
+    backgroundColor: colors.primaryLight,
+  },
+  contactBtnPrimary: { backgroundColor: colors.primary },
+  contactBtnText: { fontWeight: '700', color: colors.primary },
   muted: { color: colors.textSecondary, textAlign: 'center', marginTop: spacing.md },
   error: { color: colors.error, fontSize: 13, textAlign: 'center' },
   toast: {

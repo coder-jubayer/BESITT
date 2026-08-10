@@ -168,6 +168,10 @@ router.get('/chats/:threadId', async (req: AuthRequest, res: Response, next: Nex
     if (thread.sellerId === actor.userId) thread.sellerUnread = 0;
     if (thread.buyerId === actor.userId) thread.buyerUnread = 0;
     await thread.save();
+    await MarketplaceMessage.updateMany(
+      { threadId: thread._id.toString(), senderId: { $ne: actor.userId }, seenAt: null },
+      { $set: { seenAt: new Date() } },
+    );
 
     const messages = await MarketplaceMessage.find({ threadId: thread._id.toString() })
       .sort({ createdAt: 1 })
@@ -324,6 +328,11 @@ router.post('/:id/contact', async (req: AuthRequest, res: Response, next: NextFu
       thread.sellerUnread += 1;
       await thread.save();
     }
+
+    await MarketplaceMessage.updateMany(
+      { threadId: thread._id.toString(), senderId: { $ne: actor.userId }, seenAt: null },
+      { $set: { seenAt: new Date() } },
+    );
 
     const messages = await MarketplaceMessage.find({ threadId: thread._id.toString() })
       .sort({ createdAt: 1 })
