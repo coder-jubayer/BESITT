@@ -481,7 +481,11 @@ router.post('/groups/:groupId/members', async (req: AuthRequest, res: Response, 
       : [];
     if (!requestedIds.length) throw new AppError(400, 'Select people to add');
 
-    const nextIds = [...new Set([...group.memberIds, ...requestedIds])];
+    const existing = new Set(group.memberIds);
+    const freshIds = [...new Set(requestedIds)].filter((id) => !existing.has(id));
+    if (!freshIds.length) throw new AppError(400, 'Those people are already in this group');
+
+    const nextIds = [...group.memberIds, ...freshIds];
     const members = await memberSnapshots(nextIds);
     if (!isAppAdmin(actor.role)) {
       const users = await User.find({ _id: { $in: requestedIds } });

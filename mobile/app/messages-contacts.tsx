@@ -18,6 +18,7 @@ import {
   addInboxGroupMembers,
   createInboxGroup,
   fetchInboxDirectory,
+  fetchInboxGroup,
   openInboxThread,
 } from '../src/services/inbox.service';
 import { InboxCategory, InboxContact } from '../src/types';
@@ -47,6 +48,7 @@ export default function MessagesContactsScreen() {
     resident: [],
     guard: [],
   });
+  const [excludeIds, setExcludeIds] = useState<Set<string>>(new Set());
   const [selected, setSelected] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -71,13 +73,19 @@ export default function MessagesContactsScreen() {
     try {
       const directory = await fetchInboxDirectory();
       setContacts(directory.contacts);
+      if (mode === 'group-members' && groupId) {
+        const detail = await fetchInboxGroup(groupId);
+        setExcludeIds(new Set(detail.group.memberIds ?? []));
+      } else {
+        setExcludeIds(new Set());
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load people');
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [mode, groupId]);
 
   useFocusEffect(
     useCallback(() => {
@@ -87,7 +95,7 @@ export default function MessagesContactsScreen() {
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    const list = contacts[category] ?? [];
+    const list = (contacts[category] ?? []).filter((person) => !excludeIds.has(person.id));
     if (!q) return list;
     return list.filter((person) =>
       [person.name, person.roleLabel, person.phone, person.unitNumber, person.email]
@@ -96,7 +104,7 @@ export default function MessagesContactsScreen() {
         .toLowerCase()
         .includes(q),
     );
-  }, [contacts, category, search]);
+  }, [contacts, category, search, excludeIds]);
 
   const toggleSelect = (id: string) => {
     setSelected((current) => (current.includes(id) ? current.filter((item) => item !== id) : [...current, id]));
@@ -186,7 +194,7 @@ export default function MessagesContactsScreen() {
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoryRow}>
           {CATEGORIES.map((item) => {
             const active = category === item.value;
-            const count = contacts[item.value]?.length ?? 0;
+            const count = (contacts[item.value] ?? []).filter((person) => !excludeIds.has(person.id)).length;
             return (
               <Pressable
                 key={item.value}
@@ -218,7 +226,13 @@ export default function MessagesContactsScreen() {
       >
         {error ? <Text style={styles.error}>{error}</Text> : null}
         {loading && !filtered.length ? <Text style={styles.muted}>Loading people…</Text> : null}
-        {!loading && !filtered.length ? <Text style={styles.muted}>No people in this category.</Text> : null}
+        {!loading && !filtered.length ? (
+          <Text style={styles.muted}>
+            {mode === 'group-members'
+              ? 'Everyone in this category is already in the group.'
+              : 'No people in this category.'}
+          </Text>
+        ) : null}
 
         {filtered.map((person) => {
           const checked = selected.includes(person.id);
