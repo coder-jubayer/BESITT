@@ -45,7 +45,7 @@ router.get('/', async (req: AuthRequest, res: Response, next: NextFunction) => {
     res.json({
       success: true,
       data: {
-        users: await toUserDTOList(users),
+        users: await toUserDTOList(users, req),
         roles: creatable.map((role) => ({ value: role, label: ROLE_LABELS[role] })),
         buildings,
       },
@@ -129,7 +129,7 @@ router.post('/', async (req: AuthRequest, res: Response, next: NextFunction) => 
     res.status(201).json({
       success: true,
       message: 'User created successfully',
-      data: { user: await toUserDTO(user) },
+      data: { user: await toUserDTO(user, req) },
     });
   } catch (error) {
     next(error);
@@ -164,7 +164,7 @@ router.patch('/:id/status', async (req: AuthRequest, res: Response, next: NextFu
     res.json({
       success: true,
       message: isActive ? 'User activated' : 'User deactivated',
-      data: { user: await toUserDTO(user) },
+      data: { user: await toUserDTO(user, req) },
     });
   } catch (error) {
     next(error);

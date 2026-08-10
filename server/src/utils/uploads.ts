@@ -8,6 +8,7 @@ export const electionsUploadDir = path.join(uploadsRoot, 'elections');
 export const complaintsUploadDir = path.join(uploadsRoot, 'complaints');
 export const groupsUploadDir = path.join(uploadsRoot, 'groups');
 export const chatUploadDir = path.join(uploadsRoot, 'chat');
+export const profilesUploadDir = path.join(uploadsRoot, 'profiles');
 
 export function ensureUploadDirs(): void {
   fs.mkdirSync(marketplaceUploadDir, { recursive: true });
@@ -15,6 +16,7 @@ export function ensureUploadDirs(): void {
   fs.mkdirSync(complaintsUploadDir, { recursive: true });
   fs.mkdirSync(groupsUploadDir, { recursive: true });
   fs.mkdirSync(chatUploadDir, { recursive: true });
+  fs.mkdirSync(profilesUploadDir, { recursive: true });
 }
 
 export function storedMarketplacePath(filename: string): string {
@@ -35,6 +37,10 @@ export function storedGroupPath(filename: string): string {
 
 export function storedChatPath(filename: string): string {
   return `/uploads/chat/${filename}`;
+}
+
+export function storedProfilePath(filename: string): string {
+  return `/uploads/profiles/${filename}`;
 }
 
 export function publicFileUrl(req: Request, relativePath?: string | null): string | undefined {
@@ -59,7 +65,9 @@ export async function removeStoredFiles(paths: Array<string | undefined | null>)
           ? groupsUploadDir
           : item.includes('/chat/')
             ? chatUploadDir
-            : marketplaceUploadDir;
+            : item.includes('/profiles/')
+              ? profilesUploadDir
+              : marketplaceUploadDir;
     await fs.promises.unlink(path.join(dir, filename)).catch(() => undefined);
   }
 }

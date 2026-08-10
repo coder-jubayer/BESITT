@@ -82,6 +82,7 @@ export interface User {
   name: string;
   email: string;
   phone?: string;
+  avatar?: string;
   role: UserRole;
   unitNumber?: string;
   buildingId?: string;

@@ -67,7 +67,7 @@ export default function HomeScreen() {
         </View>
         <Pressable onPress={() => router.push('/(tabs)/profile')} style={styles.avatarWrap}>
           <Image
-            source={{ uri: `https://i.pravatar.cc/150?u=${user?.email ?? 'user'}` }}
+            source={{ uri: user?.avatar || `https://i.pravatar.cc/150?u=${user?.email ?? 'user'}` }}
             style={styles.avatar}
           />
           <View style={styles.dot} />

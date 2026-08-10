@@ -7,6 +7,7 @@ export interface IUser {
   email: string;
   password: string;
   phone?: string;
+  avatar?: string;
   role: UserRole;
   unitNumber?: string;
   buildingId?: string;
@@ -36,6 +37,7 @@ const userSchema = new Schema<IUserDocument>(
     },
     password: { type: String, required: true, minlength: 6, select: false },
     phone: { type: String, trim: true },
+    avatar: { type: String, trim: true },
     role: {
       type: String,
       enum: USER_ROLES,
@@ -66,6 +68,7 @@ userSchema.methods.toSafeJSON = function toSafeJSON(buildingName?: string) {
     name: this.name,
     email: this.email,
     phone: this.phone,
+    avatar: this.avatar,
     role: this.role,
     unitNumber: this.unitNumber,
     buildingId: this.buildingId,

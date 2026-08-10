@@ -1,12 +1,46 @@
+import fs from 'fs';
+import path from 'path';
 import { Router, Response, NextFunction } from 'express';
+import multer from 'multer';
 import { User } from '../models/User';
 import { Building } from '../models/Building';
 import { AppError } from '../middleware/errorHandler';
 import { AuthRequest, requireAuth, signToken } from '../middleware/auth';
 import { UserRole } from '../constants/roles';
 import { toUserDTO } from '../utils/buildings';
+import {
+  ensureUploadDirs,
+  profilesUploadDir,
+  removeStoredFiles,
+  storedProfilePath,
+} from '../utils/uploads';
 
 const router = Router();
+ensureUploadDirs();
+
+const avatarStorage = multer.diskStorage({
+  destination: (_req, _file, cb) => {
+    ensureUploadDirs();
+    cb(null, profilesUploadDir);
+  },
+  filename: (_req, file, cb) => {
+    const ext = path.extname(file.originalname || '').toLowerCase() || '.jpg';
+    const safeExt = ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.heic'].includes(ext) ? ext : '.jpg';
+    cb(null, `${Date.now()}-${Math.random().toString(36).slice(2, 10)}${safeExt}`);
+  },
+});
+
+const avatarUpload = multer({
+  storage: avatarStorage,
+  limits: { fileSize: 5 * 1024 * 1024, files: 1 },
+  fileFilter: (_req, file, cb) => {
+    if (!/^image\//i.test(file.mimetype || '')) {
+      cb(new AppError(400, 'Only photos are allowed'));
+      return;
+    }
+    cb(null, true);
+  },
+});
 
 function issueToken(user: {
   _id: { toString(): string };
@@ -47,7 +81,7 @@ router.post('/login', async (req, res: Response, next: NextFunction) => {
       message: 'Login successful',
       data: {
         token: issueToken(user),
-        user: await toUserDTO(user),
+        user: await toUserDTO(user, req),
       },
     });
   } catch (error) {
@@ -97,7 +131,7 @@ router.post('/signup', async (req, res: Response, next: NextFunction) => {
       message: 'Building admin account created',
       data: {
         token: issueToken(user),
-        user: await toUserDTO(user),
+        user: await toUserDTO(user, req),
       },
     });
   } catch (error) {
@@ -142,11 +176,68 @@ router.get('/me', requireAuth, async (req: AuthRequest, res: Response, next: Nex
 
     res.json({
       success: true,
-      data: { user: await toUserDTO(user) },
+      data: { user: await toUserDTO(user, req) },
     });
   } catch (error) {
     next(error);
   }
 });
+
+router.patch(
+  '/me',
+  requireAuth,
+  avatarUpload.single('avatar'),
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const user = await User.findById(req.user!.userId).select('+password');
+      if (!user || !user.isActive) {
+        throw new AppError(404, 'User not found');
+      }
+
+      if (req.body.name !== undefined) {
+        const name = String(req.body.name ?? '').trim();
+        if (name.length < 2) throw new AppError(400, 'Enter your name');
+        user.name = name;
+      }
+
+      if (req.body.phone !== undefined) {
+        const phone = String(req.body.phone ?? '').trim();
+        user.phone = phone || undefined;
+      }
+
+      if (req.body.unitNumber !== undefined) {
+        const unitNumber = String(req.body.unitNumber ?? '').trim();
+        user.unitNumber = unitNumber || undefined;
+      }
+
+      const newPassword = req.body.password ? String(req.body.password) : '';
+      if (newPassword) {
+        if (newPassword.length < 6) throw new AppError(400, 'Password must be at least 6 characters');
+        const currentPassword = String(req.body.currentPassword ?? '');
+        if (!currentPassword || !(await user.comparePassword(currentPassword))) {
+          throw new AppError(400, 'Current password is incorrect');
+        }
+        user.password = newPassword;
+      }
+
+      if (req.file) {
+        const previous = user.avatar;
+        user.avatar = storedProfilePath(req.file.filename);
+        if (previous) await removeStoredFiles([previous]);
+      }
+
+      await user.save();
+
+      res.json({
+        success: true,
+        message: 'Profile updated',
+        data: { user: await toUserDTO(user, req) },
+      });
+    } catch (error) {
+      if (req.file) await fs.promises.unlink(req.file.path).catch(() => undefined);
+      next(error);
+    }
+  },
+);
 
 export default router;
