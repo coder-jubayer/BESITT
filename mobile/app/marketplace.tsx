@@ -254,20 +254,44 @@ export default function MarketplaceScreen() {
           <Text style={styles.meta}>{formatNoticeDate(selected.createdAt)}</Text>
           <Text style={styles.description}>{selected.description}</Text>
           <View style={styles.sellerCard}>
-            <Text style={styles.sellerLabel}>Seller</Text>
-            <Text style={styles.sellerName}>{selected.sellerName}</Text>
-            {selected.sellerPhone ? (
-              <Pressable onPress={() => void callSeller(selected.sellerPhone)}>
-                <Text style={styles.sellerContact}>{selected.sellerPhone}</Text>
-              </Pressable>
-            ) : null}
-            {selected.sellerEmail ? <Text style={styles.sellerContact}>{selected.sellerEmail}</Text> : null}
+            <View style={styles.sellerTop}>
+              <View style={styles.sellerAvatar}>
+                <Text style={styles.sellerInitial}>
+                  {(selected.sellerName || 'S').trim().charAt(0).toUpperCase()}
+                </Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.sellerLabel}>Seller</Text>
+                <Text style={styles.sellerName}>{selected.sellerName}</Text>
+                {selected.sellerPhone ? (
+                  <Text style={styles.sellerPhone}>{selected.sellerPhone}</Text>
+                ) : null}
+                {selected.sellerEmail ? <Text style={styles.sellerHint}>{selected.sellerEmail}</Text> : null}
+              </View>
+            </View>
+            {selected.isMine ? (
+              <View style={styles.ownBanner}>
+                <Ionicons name="checkmark-circle" size={16} color={colors.primary} />
+                <Text style={styles.ownNote}>This is your listing</Text>
+              </View>
+            ) : (
+              <View style={styles.sellerActions}>
+                {selected.sellerPhone ? (
+                  <Pressable style={styles.sellerBtn} onPress={() => void callSeller(selected.sellerPhone)}>
+                    <Ionicons name="call" size={16} color={colors.primary} />
+                    <Text style={styles.sellerBtnText}>Call</Text>
+                  </Pressable>
+                ) : null}
+                <Pressable
+                  style={[styles.sellerBtn, styles.sellerBtnPrimary]}
+                  onPress={() => contactSeller(selected)}
+                >
+                  <Ionicons name="chatbubble-ellipses" size={16} color={colors.white} />
+                  <Text style={[styles.sellerBtnText, { color: colors.white }]}>Contact</Text>
+                </Pressable>
+              </View>
+            )}
           </View>
-          {selected.isMine ? (
-            <Text style={styles.ownNote}>This is your listing.</Text>
-          ) : (
-            <Button title="Contact seller" onPress={() => contactSeller(selected)} />
-          )}
           {selected.canDelete ? (
             <Button title="Delete listing" variant="danger" onPress={() => setDeleteTarget(selected)} />
           ) : null}
@@ -290,22 +314,9 @@ export default function MarketplaceScreen() {
   return (
     <View style={styles.root}>
       <PageHeader title="Marketplace" onBack={() => router.back()} />
-      {canCreate ? (
-        <View style={styles.createBar}>
-          <Pressable
-            style={styles.createBtn}
-            onPress={() => {
-              resetForm();
-              setCreateOpen(true);
-            }}
-          >
-            <Text style={styles.createText}>+ Create Listing</Text>
-          </Pressable>
-        </View>
-      ) : null}
 
       <ScrollView
-        contentContainerStyle={[styles.grid, { paddingBottom: insets.bottom + 40 }]}
+        contentContainerStyle={[styles.grid, { paddingBottom: insets.bottom + (canCreate ? 108 : 40) }]}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -376,12 +387,29 @@ export default function MarketplaceScreen() {
                   <Text style={styles.title} numberOfLines={2}>
                     {item.title}
                   </Text>
-                  <Text style={styles.seller}>{item.sellerName}</Text>
+                  <View style={styles.cardSeller}>
+                    <View style={styles.cardAvatar}>
+                      <Text style={styles.cardInitial}>
+                        {(item.sellerName || 'S').trim().charAt(0).toUpperCase()}
+                      </Text>
+                    </View>
+                    <Text style={styles.seller} numberOfLines={1}>
+                      {item.sellerName}
+                    </Text>
+                  </View>
                   {item.isMine ? (
-                    <Text style={styles.ownChip}>Your listing</Text>
+                    <View style={styles.ownChipWrap}>
+                      <Text style={styles.ownChip}>Your listing</Text>
+                    </View>
                   ) : (
-                    <Pressable style={styles.contact} onPress={() => contactSeller(item)}>
-                      <Ionicons name="chatbubble-outline" size={14} color={colors.primaryDark} />
+                    <Pressable
+                      style={styles.contact}
+                      onPress={(event) => {
+                        event.stopPropagation();
+                        contactSeller(item);
+                      }}
+                    >
+                      <Ionicons name="chatbubble-ellipses" size={14} color={colors.white} />
                       <Text style={styles.contactText}>Contact</Text>
                     </Pressable>
                   )}
@@ -392,8 +420,20 @@ export default function MarketplaceScreen() {
         </View>
       </ScrollView>
 
+      {canCreate ? (
+        <Pressable
+          style={({ pressed }) => [styles.fab, { bottom: insets.bottom + 24 }, pressed && styles.fabPressed]}
+          onPress={() => {
+            resetForm();
+            setCreateOpen(true);
+          }}
+        >
+          <Ionicons name="add" size={28} color={colors.white} />
+        </Pressable>
+      ) : null}
+
       {toast ? (
-        <View style={[styles.toast, { bottom: insets.bottom + 24 }]}>
+        <View style={[styles.toast, { bottom: insets.bottom + (canCreate ? 96 : 24) }]}>
           <Text style={styles.toastText}>{toast}</Text>
         </View>
       ) : null}
@@ -506,19 +546,19 @@ function DeleteModal({
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.background },
-  createBar: {
-    backgroundColor: colors.surface,
-    padding: spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  createBtn: {
-    backgroundColor: colors.slate800,
-    paddingVertical: 14,
-    borderRadius: borderRadius.md,
+  fab: {
+    position: 'absolute',
+    right: 24,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: colors.primary,
     alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 40,
+    ...shadows.fab,
   },
-  createText: { color: colors.white, fontWeight: '600' },
+  fabPressed: { transform: [{ scale: 0.95 }] },
   grid: { padding: spacing.md, gap: spacing.md },
   chipRow: { gap: spacing.sm, paddingBottom: 4 },
   chip: {
@@ -563,21 +603,36 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   price: { fontWeight: '700', fontSize: 13, color: colors.text },
-  body: { padding: 12, gap: 4 },
+  body: { padding: 12, gap: 8 },
   title: { fontWeight: '600', fontSize: 13, color: colors.text },
-  seller: { fontSize: 11, color: colors.textMuted },
-  ownChip: { marginTop: 8, fontSize: 11, fontWeight: '700', color: colors.primaryDark },
-  contact: {
-    marginTop: 8,
+  cardSeller: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  cardAvatar: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
     backgroundColor: colors.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cardInitial: { fontSize: 10, fontWeight: '800', color: colors.primary },
+  seller: { flex: 1, fontSize: 12, color: colors.textSecondary, fontWeight: '600' },
+  ownChipWrap: {
+    backgroundColor: colors.primaryLight,
+    borderRadius: 8,
+    paddingVertical: 8,
+    alignItems: 'center',
+  },
+  ownChip: { fontSize: 11, fontWeight: '700', color: colors.primaryDark },
+  contact: {
+    backgroundColor: colors.primary,
     borderRadius: 8,
     paddingVertical: 8,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 4,
+    gap: 6,
   },
-  contactText: { fontSize: 11, fontWeight: '600', color: colors.primaryDark },
+  contactText: { fontSize: 12, fontWeight: '700', color: colors.white },
   muted: { color: colors.textSecondary, textAlign: 'center', marginTop: spacing.md, width: '100%' },
   error: { color: colors.error, fontSize: 13, textAlign: 'center' },
   toast: {
@@ -608,16 +663,50 @@ const styles = StyleSheet.create({
   description: { fontSize: 15, color: colors.textSecondary, lineHeight: 22 },
   sellerCard: {
     backgroundColor: colors.surface,
-    borderRadius: borderRadius.xl,
+    borderRadius: borderRadius['2xl'],
     borderWidth: 1,
     borderColor: colors.border,
     padding: spacing.md,
-    gap: 4,
+    gap: 12,
+    ...shadows.sm,
   },
-  sellerLabel: { fontSize: 12, fontWeight: '700', color: colors.textMuted, textTransform: 'uppercase' },
-  sellerName: { fontWeight: '700', color: colors.text, fontSize: 16 },
-  sellerContact: { color: colors.primaryDark, fontWeight: '600' },
-  ownNote: { textAlign: 'center', color: colors.textSecondary, fontWeight: '600' },
+  sellerTop: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  sellerAvatar: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: colors.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sellerInitial: { fontSize: 20, fontWeight: '800', color: colors.primary },
+  sellerLabel: { fontSize: 11, fontWeight: '700', color: colors.textMuted, textTransform: 'uppercase' },
+  sellerName: { fontWeight: '700', color: colors.text, fontSize: 16, marginTop: 2 },
+  sellerPhone: { fontSize: 14, fontWeight: '700', color: colors.text, marginTop: 4 },
+  sellerHint: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
+  sellerActions: { flexDirection: 'row', gap: 8 },
+  sellerBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 12,
+    borderRadius: borderRadius.md,
+    backgroundColor: colors.primaryLight,
+  },
+  sellerBtnPrimary: { backgroundColor: colors.primary },
+  sellerBtnText: { fontWeight: '700', color: colors.primary },
+  ownBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: colors.primaryLight,
+    borderRadius: borderRadius.md,
+    paddingVertical: 10,
+  },
+  ownNote: { color: colors.primaryDark, fontWeight: '700' },
   modalWrap: { flex: 1, justifyContent: 'flex-end' },
   backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.4)' },
   sheet: {
