@@ -10,6 +10,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Linking,
+  TextInput,
 } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { Image } from 'expo-image';
@@ -242,11 +243,14 @@ export default function ComplaintsScreen() {
 
   if (selected) {
     const tone = STATUS_TONE[selected.status];
+    const roleName = selected.createdByRole
+      ? ROLE_LABELS[selected.createdByRole as UserRole] ?? selected.createdByRole
+      : 'Resident';
     return (
       <View style={styles.root}>
         <PageHeader title="Ticket" onBack={() => setSelected(null)} />
         <ScrollView
-          contentContainerStyle={[styles.detail, { paddingBottom: insets.bottom + 90 }]}
+          contentContainerStyle={[styles.detail, { paddingBottom: insets.bottom + 100 }]}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
@@ -257,44 +261,86 @@ export default function ComplaintsScreen() {
             />
           }
         >
-          <View style={styles.detailTop}>
-            <Text style={styles.detailTitle}>{selected.title}</Text>
-            <View style={[styles.badge, { backgroundColor: tone.bg }]}>
-              <Text style={[styles.badgeText, { color: tone.fg }]}>{selected.statusLabel}</Text>
+          <View style={styles.ticketCard}>
+            <View style={styles.detailTop}>
+              <Text style={styles.detailTitle}>{selected.title}</Text>
+              <View style={[styles.badge, { backgroundColor: tone.bg }]}>
+                <Text style={[styles.badgeText, { color: tone.fg }]}>{selected.statusLabel}</Text>
+              </View>
             </View>
+            <View style={styles.ticketMetaRow}>
+              <View style={styles.ticketMetaChip}>
+                <Ionicons name="construct-outline" size={14} color={colors.primary} />
+                <Text style={styles.ticketMetaText}>{selected.categoryLabel}</Text>
+              </View>
+              <View style={styles.ticketMetaChip}>
+                <Ionicons name="time-outline" size={14} color={colors.textSecondary} />
+                <Text style={styles.ticketMetaText}>{formatNoticeDate(selected.createdAt)}</Text>
+              </View>
+            </View>
+            <Text style={styles.description}>{selected.description}</Text>
+            {selected.media.length ? (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.mediaRow}>
+                {selected.media.map((item, index) => (
+                  <Pressable key={`${item.url}-${index}`} onPress={() => void Linking.openURL(item.url)}>
+                    {item.kind === 'image' ? (
+                      <Image source={{ uri: item.url }} style={styles.mediaThumb} contentFit="cover" />
+                    ) : (
+                      <View style={styles.videoThumb}>
+                        <Ionicons name="play-circle" size={28} color={colors.white} />
+                        <Text style={styles.videoLabel}>Video</Text>
+                      </View>
+                    )}
+                  </Pressable>
+                ))}
+              </ScrollView>
+            ) : null}
           </View>
-          <Text style={styles.metaLine}>
-            {selected.categoryLabel}
-            {selected.unitNumber ? ` · Apt ${selected.unitNumber}` : ''}
-            {' · '}
-            {formatNoticeDate(selected.createdAt)}
-          </Text>
-          {!canManage ? <Text style={styles.reporter}>Reported by {selected.createdByName}</Text> : null}
 
-          {canManage ? (
-            <View style={styles.residentCard}>
-              <View style={styles.residentTop}>
-                <View style={styles.residentAvatar}>
-                  <Ionicons name="person" size={22} color={colors.primary} />
-                </View>
+          <View style={styles.residentCard}>
+            <Text style={styles.residentLabel}>Opened by</Text>
+            <View style={styles.residentTop}>
+              <View style={styles.residentAvatar}>
+                <Text style={styles.residentInitial}>
+                  {(selected.createdByName || 'R').trim().charAt(0).toUpperCase()}
+                </Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.residentName}>{selected.createdByName}</Text>
+                <Text style={styles.residentMeta}>
+                  {roleName}
+                  {selected.unitNumber ? ` · Apt ${selected.unitNumber}` : ''}
+                </Text>
+              </View>
+            </View>
+            <View style={styles.infoGrid}>
+              <View style={styles.infoItem}>
+                <Ionicons name="call-outline" size={16} color={colors.primary} />
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.residentName}>{selected.createdByName}</Text>
-                  <Text style={styles.residentMeta}>
-                    {selected.createdByRole
-                      ? ROLE_LABELS[selected.createdByRole as UserRole] ?? selected.createdByRole
-                      : 'Resident'}
-                    {selected.unitNumber ? ` · Apt ${selected.unitNumber}` : ''}
-                  </Text>
-                  {selected.createdByPhone ? (
-                    <Text style={styles.residentPhone}>{selected.createdByPhone}</Text>
-                  ) : (
-                    <Text style={styles.residentHint}>No phone on file</Text>
-                  )}
-                  {selected.createdByEmail ? (
-                    <Text style={styles.residentHint}>{selected.createdByEmail}</Text>
-                  ) : null}
+                  <Text style={styles.infoLabel}>Phone</Text>
+                  <Text style={styles.infoValue}>{selected.createdByPhone || 'Not available'}</Text>
                 </View>
               </View>
+              {selected.createdByEmail ? (
+                <View style={styles.infoItem}>
+                  <Ionicons name="mail-outline" size={16} color={colors.primary} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.infoLabel}>Email</Text>
+                    <Text style={styles.infoValue}>{selected.createdByEmail}</Text>
+                  </View>
+                </View>
+              ) : null}
+              {selected.unitNumber ? (
+                <View style={styles.infoItem}>
+                  <Ionicons name="home-outline" size={16} color={colors.primary} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.infoLabel}>Unit</Text>
+                    <Text style={styles.infoValue}>Apt {selected.unitNumber}</Text>
+                  </View>
+                </View>
+              ) : null}
+            </View>
+            {canManage && !selected.isMine ? (
               <View style={styles.residentActions}>
                 {selected.createdByPhone ? (
                   <Pressable
@@ -318,30 +364,11 @@ export default function ComplaintsScreen() {
                   <Text style={[styles.contactBtnText, { color: colors.white }]}>Message</Text>
                 </Pressable>
               </View>
-            </View>
-          ) : null}
-
-          <Text style={styles.description}>{selected.description}</Text>
-
-          {selected.media.length ? (
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.mediaRow}>
-              {selected.media.map((item, index) => (
-                <Pressable key={`${item.url}-${index}`} onPress={() => void Linking.openURL(item.url)}>
-                  {item.kind === 'image' ? (
-                    <Image source={{ uri: item.url }} style={styles.mediaThumb} contentFit="cover" />
-                  ) : (
-                    <View style={styles.videoThumb}>
-                      <Ionicons name="play-circle" size={28} color={colors.white} />
-                      <Text style={styles.videoLabel}>Video</Text>
-                    </View>
-                  )}
-                </Pressable>
-              ))}
-            </ScrollView>
-          ) : null}
+            ) : null}
+          </View>
 
           {canManage ? (
-            <View>
+            <View style={styles.ticketCard}>
               <Text style={styles.sectionLabel}>Update status</Text>
               <View style={styles.statusRow}>
                 {statuses.map((option) => {
@@ -376,17 +403,24 @@ export default function ComplaintsScreen() {
         </ScrollView>
 
         {selected.canComment ? (
-          <View style={[styles.composer, { paddingBottom: Math.max(insets.bottom, 12) }]}>
-            <Input
-              value={draft}
-              onChangeText={setDraft}
-              placeholder={canManage ? 'Reply with an update…' : 'Add a follow-up…'}
-              style={styles.composerInput}
-            />
-            <Pressable style={styles.send} onPress={() => void handleComment()} disabled={sending || !draft.trim()}>
-              <Ionicons name="send" size={18} color={colors.white} />
-            </Pressable>
-          </View>
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}
+          >
+            <View style={[styles.composer, { paddingBottom: Math.max(insets.bottom, 12) }]}>
+              <TextInput
+                value={draft}
+                onChangeText={setDraft}
+                placeholder={canManage ? 'Reply with an update…' : 'Add a follow-up…'}
+                placeholderTextColor={colors.textMuted}
+                style={styles.composerInput}
+                multiline
+              />
+              <Pressable style={styles.send} onPress={() => void handleComment()} disabled={sending || !draft.trim()}>
+                <Ionicons name="send" size={18} color={colors.white} />
+              </Pressable>
+            </View>
+          </KeyboardAvoidingView>
         ) : null}
 
         {toast ? (
@@ -634,6 +668,13 @@ const styles = StyleSheet.create({
     gap: 12,
     ...shadows.sm,
   },
+  residentLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.textMuted,
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+  },
   residentTop: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   residentAvatar: {
     width: 52,
@@ -643,10 +684,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  residentInitial: { fontSize: 20, fontWeight: '800', color: colors.primary },
   residentName: { fontSize: 16, fontWeight: '700', color: colors.text },
   residentMeta: { fontSize: 13, color: colors.textSecondary, marginTop: 2 },
   residentPhone: { fontSize: 14, fontWeight: '700', color: colors.text, marginTop: 4 },
   residentHint: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
+  infoGrid: { gap: 10 },
+  infoItem: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    backgroundColor: colors.slate100,
+    borderRadius: borderRadius.md,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  infoLabel: { fontSize: 11, fontWeight: '700', color: colors.textMuted, textTransform: 'uppercase' },
+  infoValue: { fontSize: 14, fontWeight: '600', color: colors.text, marginTop: 2 },
   residentActions: { flexDirection: 'row', gap: 8 },
   contactBtn: {
     flex: 1,
@@ -673,8 +727,28 @@ const styles = StyleSheet.create({
   },
   toastText: { color: colors.white, textAlign: 'center', fontWeight: '600' },
   detail: { padding: spacing.md, gap: spacing.md },
+  ticketCard: {
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius['2xl'],
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.md,
+    gap: 12,
+    ...shadows.sm,
+  },
   detailTop: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
   detailTitle: { flex: 1, fontSize: 20, fontWeight: '700', color: colors.text },
+  ticketMetaRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  ticketMetaChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: colors.slate100,
+    borderRadius: borderRadius.full,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  ticketMetaText: { fontSize: 12, fontWeight: '600', color: colors.textSecondary },
   metaLine: { color: colors.textSecondary, marginTop: -8 },
   reporter: { fontSize: 13, color: colors.textMuted, marginTop: -8 },
   description: { fontSize: 15, color: colors.text, lineHeight: 22 },
@@ -718,12 +792,25 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-end',
     gap: 8,
-    padding: spacing.md,
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.md,
     backgroundColor: colors.surface,
     borderTopWidth: 1,
     borderTopColor: colors.slate200,
+    width: '100%',
   },
-  composerInput: { flex: 1, minHeight: 44 },
+  composerInput: {
+    flex: 1,
+    minWidth: 0,
+    width: '100%',
+    backgroundColor: colors.slate100,
+    borderRadius: borderRadius.lg,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 14,
+    color: colors.text,
+    maxHeight: 120,
+  },
   send: {
     width: 44,
     height: 44,
