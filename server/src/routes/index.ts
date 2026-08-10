@@ -7,6 +7,7 @@ import expensesRoutes from './expenses.routes';
 import directoryRoutes from './directory.routes';
 import marketplaceRoutes from './marketplace.routes';
 import electionsRoutes from './elections.routes';
+import complaintsRoutes from './complaints.routes';
 
 const router = Router();
 
@@ -18,6 +19,7 @@ router.use('/expenses', expensesRoutes);
 router.use('/directory', directoryRoutes);
 router.use('/marketplace', marketplaceRoutes);
 router.use('/elections', electionsRoutes);
+router.use('/complaints', complaintsRoutes);
 
 router.get('/', (_req, res) => {
   res.json({

@@ -3,7 +3,9 @@ import jwt from 'jsonwebtoken';
 import { env } from '../config/env';
 import { AppError } from './errorHandler';
 import {
+  canCreateComplaint,
   canCreateListing,
+  canManageComplaints,
   canManageDirectory,
   canManageElections,
   canManageExpenses,
@@ -89,6 +91,22 @@ export function requireListingCreator(req: AuthRequest, _res: Response, next: Ne
 export function requireElectionManager(req: AuthRequest, _res: Response, next: NextFunction): void {
   if (!req.user || !canManageElections(req.user.role)) {
     next(new AppError(403, 'Only committee and building admins can manage elections'));
+    return;
+  }
+  next();
+}
+
+export function requireComplaintCreator(req: AuthRequest, _res: Response, next: NextFunction): void {
+  if (!req.user || !canCreateComplaint(req.user.role)) {
+    next(new AppError(403, 'You do not have permission to create complaint tickets'));
+    return;
+  }
+  next();
+}
+
+export function requireComplaintManager(req: AuthRequest, _res: Response, next: NextFunction): void {
+  if (!req.user || !canManageComplaints(req.user.role)) {
+    next(new AppError(403, 'Only committee and building admins can manage complaints'));
     return;
   }
   next();

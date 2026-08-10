@@ -6,6 +6,8 @@ import { DirectoryContact } from '../models/DirectoryContact';
 import { MarketplaceListing } from '../models/MarketplaceListing';
 import { Election } from '../models/Election';
 import { ElectionCandidate } from '../models/ElectionCandidate';
+import { Complaint } from '../models/Complaint';
+import { ComplaintComment } from '../models/ComplaintComment';
 
 const ADMIN_EMAIL = 'admin@bm.com';
 const ADMIN_PASSWORD = 'admin123';
@@ -49,8 +51,23 @@ export async function seedAdminUser(): Promise<void> {
     console.log(`Committee user seeded (${committeeEmail})`);
   }
 
+  const residentEmail = 'resident1@bm.com';
+  const existingResident = await User.findOne({ email: residentEmail });
+  if (!existingResident) {
+    await User.create({
+      name: 'Resident One',
+      email: residentEmail,
+      password: 'resident123',
+      role: 'resident',
+      unitNumber: 'A-101',
+      buildingId: defaultBuilding._id.toString(),
+    });
+    console.log(`Resident user seeded (${residentEmail})`);
+  }
+
   await seedSampleMarketplace(defaultBuilding._id.toString());
   await seedSampleElection(defaultBuilding._id.toString());
+  await seedSampleComplaints(defaultBuilding._id.toString());
 
   const existing = await User.findOne({ email: ADMIN_EMAIL });
   if (existing) {
@@ -228,4 +245,76 @@ async function seedSampleElection(buildingId: string): Promise<void> {
   ]);
 
   console.log('Sample election seeded');
+}
+
+async function seedSampleComplaints(buildingId: string): Promise<void> {
+  const count = await Complaint.countDocuments({ buildingId });
+  if (count > 0) return;
+
+  const resident = await User.findOne({ email: 'resident1@bm.com' });
+  const committee = await User.findOne({ email: 'committee@bm.com' });
+  const creator = resident || committee;
+  if (!creator) return;
+
+  const [leaking, ac, lobby] = await Complaint.insertMany([
+    {
+      buildingId,
+      title: 'Leaking pipe in bathroom',
+      description: 'Water is dripping under the sink in the master bathroom.',
+      category: 'plumbing',
+      status: 'in_progress',
+      media: [],
+      createdBy: creator._id.toString(),
+      createdByName: creator.name,
+      unitNumber: creator.unitNumber || 'A-101',
+      createdAt: new Date(),
+    },
+    {
+      buildingId,
+      title: 'AC not cooling',
+      description: 'Living room AC runs but blows warm air.',
+      category: 'hvac',
+      status: 'open',
+      media: [],
+      createdBy: creator._id.toString(),
+      createdByName: creator.name,
+      unitNumber: creator.unitNumber || 'A-101',
+      createdAt: new Date(Date.now() - 24 * 60 * 60 * 1000),
+    },
+    {
+      buildingId,
+      title: 'Lobby light broken',
+      description: 'The light near the lift lobby on floor 2 is out.',
+      category: 'common_area',
+      status: 'resolved',
+      media: [],
+      createdBy: creator._id.toString(),
+      createdByName: creator.name,
+      unitNumber: creator.unitNumber || 'A-101',
+      createdAt: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000),
+    },
+  ]);
+
+  if (committee) {
+    await ComplaintComment.insertMany([
+      {
+        complaintId: leaking._id.toString(),
+        buildingId,
+        authorId: committee._id.toString(),
+        authorName: committee.name,
+        authorRole: 'committee',
+        text: 'Plumber scheduled for tomorrow morning.',
+      },
+      {
+        complaintId: lobby._id.toString(),
+        buildingId,
+        authorId: committee._id.toString(),
+        authorName: committee.name,
+        authorRole: 'committee',
+        text: 'Bulb replaced. Please confirm if it is working.',
+      },
+    ]);
+  }
+
+  console.log('Sample complaints seeded');
 }

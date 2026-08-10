@@ -49,6 +49,14 @@ export function canCastVote(role?: UserRole | null): boolean {
   return role === 'resident';
 }
 
+export function canCreateComplaint(role?: UserRole | null): boolean {
+  return role === 'resident' || role === 'committee' || isBuildingAdmin(role) || isAppAdmin(role);
+}
+
+export function canManageComplaints(role?: UserRole | null): boolean {
+  return role === 'committee' || isBuildingAdmin(role) || isAppAdmin(role);
+}
+
 export function isResident(role?: UserRole | null): boolean {
   return role === 'resident';
 }
@@ -293,4 +301,66 @@ export interface ElectionsListResponse {
   elections: ElectionSummary[];
   canManage: boolean;
   buildings?: Building[];
+}
+
+export type ComplaintStatus = 'open' | 'in_progress' | 'resolved';
+
+export interface ComplaintCategoryOption {
+  value: string;
+  label: string;
+}
+
+export interface ComplaintStatusOption {
+  value: ComplaintStatus;
+  label: string;
+}
+
+export interface ComplaintMedia {
+  url: string;
+  kind: 'image' | 'video';
+}
+
+export interface ComplaintTicket {
+  id: string;
+  buildingId: string;
+  title: string;
+  description: string;
+  category: string;
+  categoryLabel: string;
+  status: ComplaintStatus;
+  statusLabel: string;
+  media: ComplaintMedia[];
+  createdBy: string;
+  createdByName: string;
+  unitNumber?: string;
+  createdAt: string;
+  updatedAt?: string;
+  isMine?: boolean;
+  canManage?: boolean;
+  canComment?: boolean;
+}
+
+export interface ComplaintComment {
+  id: string;
+  complaintId: string;
+  authorId: string;
+  authorName: string;
+  authorRole: string;
+  text: string;
+  isSystem?: boolean;
+  createdAt: string;
+}
+
+export interface ComplaintsListResponse {
+  complaints: ComplaintTicket[];
+  categories: ComplaintCategoryOption[];
+  statuses: ComplaintStatusOption[];
+  canCreate: boolean;
+  canManage: boolean;
+  buildings?: Building[];
+}
+
+export interface ComplaintDetailResponse {
+  complaint: ComplaintTicket;
+  comments: ComplaintComment[];
 }

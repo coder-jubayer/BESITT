@@ -77,6 +77,14 @@ export function canCastVote(role?: string | null): boolean {
   return isResident(role);
 }
 
+export function canCreateComplaint(role?: string | null): boolean {
+  return isResident(role) || isCommittee(role) || isBuildingAdmin(role) || isAppAdmin(role);
+}
+
+export function canManageComplaints(role?: string | null): boolean {
+  return isCommittee(role) || isBuildingAdmin(role) || isAppAdmin(role);
+}
+
 export function creatableRolesFor(role?: string | null): UserRole[] {
   if (isAppAdmin(role)) return [...APP_ADMIN_CREATABLE_ROLES];
   if (isBuildingAdmin(role)) return [...BUILDING_ADMIN_CREATABLE_ROLES];
