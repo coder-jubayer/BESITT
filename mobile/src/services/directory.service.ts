@@ -12,7 +12,8 @@ export async function fetchDirectory(buildingId?: string): Promise<DirectoryList
 }
 
 export async function createDirectoryContact(payload: {
-  type: DirectoryType;
+  type?: DirectoryType;
+  typeLabel?: string;
   name: string;
   phone: string;
   note?: string;

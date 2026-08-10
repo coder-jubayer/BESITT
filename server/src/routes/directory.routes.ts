@@ -5,7 +5,7 @@ import { User } from '../models/User';
 import { AppError } from '../middleware/errorHandler';
 import { AuthRequest, requireAuth, requireDirectoryManager } from '../middleware/auth';
 import { canManageDirectory, isAppAdmin } from '../constants/roles';
-import { DIRECTORY_TYPES, DIRECTORY_TYPE_VALUES, DirectoryType } from '../constants/directory';
+import { collectDirectoryTypes, resolveDirectoryType } from '../constants/directory';
 
 const router = Router();
 
@@ -53,11 +53,13 @@ router.get('/', async (req: AuthRequest, res: Response, next: NextFunction) => {
       ? await DirectoryContact.find({ buildingId }).sort({ type: 1, createdAt: 1 })
       : [];
 
+    const safeContacts = contacts.map((item) => item.toSafeJSON());
+
     res.json({
       success: true,
       data: {
-        contacts: contacts.map((item) => item.toSafeJSON()),
-        types: DIRECTORY_TYPES.map((item) => ({ ...item })),
+        contacts: safeContacts,
+        types: collectDirectoryTypes(safeContacts),
         canManage: canManageDirectory(actor.role),
         buildings,
       },
@@ -70,14 +72,11 @@ router.get('/', async (req: AuthRequest, res: Response, next: NextFunction) => {
 router.post('/', requireDirectoryManager, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const actor = req.user!;
-    const type = String(req.body.type ?? '') as DirectoryType;
+    const { type, typeLabel } = resolveDirectoryType(req.body);
     const name = String(req.body.name ?? '').trim();
     const phone = normalizePhone(String(req.body.phone ?? ''));
     const note = req.body.note ? String(req.body.note).trim() : undefined;
 
-    if (!DIRECTORY_TYPE_VALUES.includes(type)) {
-      throw new AppError(400, 'Select a contact type');
-    }
     if (name.length < 2) {
       throw new AppError(400, 'Name is required');
     }
@@ -97,6 +96,7 @@ router.post('/', requireDirectoryManager, async (req: AuthRequest, res: Response
     const contact = await DirectoryContact.create({
       buildingId,
       type,
+      typeLabel,
       name,
       phone,
       note,

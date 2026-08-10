@@ -1,9 +1,10 @@
 import mongoose, { Document, Schema, Model } from 'mongoose';
-import { DIRECTORY_TYPE_VALUES, DirectoryType, directoryTypeMeta } from '../constants/directory';
+import { directoryTypeMeta } from '../constants/directory';
 
 export interface IDirectoryContact {
   buildingId: string;
-  type: DirectoryType;
+  type?: string;
+  typeLabel?: string;
   name: string;
   phone: string;
   note?: string;
@@ -17,7 +18,7 @@ export interface IDirectoryContactDocument extends IDirectoryContact, Document {
   toSafeJSON(): {
     id: string;
     buildingId: string;
-    type: DirectoryType;
+    type?: string;
     typeLabel: string;
     icon: string;
     name: string;
@@ -31,7 +32,8 @@ export interface IDirectoryContactDocument extends IDirectoryContact, Document {
 const directoryContactSchema = new Schema<IDirectoryContactDocument>(
   {
     buildingId: { type: String, required: true, index: true },
-    type: { type: String, required: true, enum: DIRECTORY_TYPE_VALUES },
+    type: { type: String, trim: true },
+    typeLabel: { type: String, trim: true },
     name: { type: String, required: true, trim: true },
     phone: { type: String, required: true, trim: true },
     note: { type: String, trim: true },
@@ -44,11 +46,11 @@ const directoryContactSchema = new Schema<IDirectoryContactDocument>(
 directoryContactSchema.index({ buildingId: 1, type: 1, createdAt: 1 });
 
 directoryContactSchema.methods.toSafeJSON = function toSafeJSON() {
-  const meta = directoryTypeMeta(this.type);
+  const meta = directoryTypeMeta(this.type, this.typeLabel);
   return {
     id: this._id.toString(),
     buildingId: this.buildingId,
-    type: this.type,
+    type: this.type || undefined,
     typeLabel: meta.label,
     icon: meta.icon,
     name: this.name,

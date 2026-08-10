@@ -158,24 +158,19 @@ export interface ExpensesMonthResponse {
   buildings?: Building[];
 }
 
-export type DirectoryType =
-  | 'fire'
-  | 'police'
-  | 'property_manager'
-  | 'security'
-  | 'gas'
-  | 'welfare';
+export type DirectoryType = string;
 
 export interface DirectoryTypeOption {
   value: DirectoryType;
   label: string;
   icon: string;
+  custom?: boolean;
 }
 
 export interface DirectoryContact {
   id: string;
   buildingId: string;
-  type: DirectoryType;
+  type?: DirectoryType;
   typeLabel: string;
   icon: string;
   name: string;

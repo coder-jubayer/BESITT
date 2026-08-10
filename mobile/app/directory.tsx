@@ -73,7 +73,11 @@ export default function DirectoryScreen() {
 
   const [createOpen, setCreateOpen] = useState(false);
   const [creating, setCreating] = useState(false);
-  const [type, setType] = useState<DirectoryType>('fire');
+  const [type, setType] = useState<DirectoryType>('');
+  const [customTypes, setCustomTypes] = useState<DirectoryTypeOption[]>([]);
+  const [typeOpen, setTypeOpen] = useState(false);
+  const [newTypeName, setNewTypeName] = useState('');
+  const [typeFormError, setTypeFormError] = useState<string | null>(null);
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [note, setNote] = useState('');
@@ -87,12 +91,11 @@ export default function DirectoryScreen() {
       const data = await fetchDirectory(appAdmin ? buildingId || undefined : undefined);
       setContacts(data.contacts);
       setTypes(data.types);
+      setCustomTypes((current) => current.filter((item) => !data.types.some((option) => option.value === item.value)));
       setCanManage(data.canManage);
       setBuildings(data.buildings ?? []);
       setBuildingId((current) => current || data.buildings?.[0]?.id || '');
-      setType((current) =>
-        data.types.some((item) => item.value === current) ? current : (data.types[0]?.value ?? 'fire'),
-      );
+      setType((current) => (current && data.types.some((item) => item.value === current) ? current : ''));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load directory');
     } finally {
@@ -112,22 +115,83 @@ export default function DirectoryScreen() {
     setTimeout(() => setToast(null), 2200);
   };
 
+  const formTypes = useMemo(() => {
+    const seen = new Set(types.map((item) => item.value));
+    return [...types, ...customTypes.filter((item) => !seen.has(item.value))];
+  }, [types, customTypes]);
+
   const groups = useMemo(() => {
-    const order = types.length ? types : [];
-    return order
+    const known = new Set(types.map((item) => item.value));
+    const ordered = types
       .map((item) => ({
         ...item,
         contacts: contacts.filter((contact) => contact.type === item.value),
       }))
       .filter((group) => group.contacts.length > 0);
+
+    const extras = new Map<string, DirectoryTypeOption & { contacts: DirectoryContact[] }>();
+    for (const contact of contacts) {
+      if (contact.type && known.has(contact.type)) continue;
+      const key = contact.type || 'other';
+      const existing = extras.get(key);
+      if (existing) {
+        existing.contacts.push(contact);
+        continue;
+      }
+      extras.set(key, {
+        value: key,
+        label: contact.typeLabel || 'Other',
+        icon: contact.icon || 'call',
+        contacts: [contact],
+      });
+    }
+
+    return [...ordered, ...extras.values()];
   }, [types, contacts]);
 
   const resetForm = () => {
-    setType(types[0]?.value ?? 'fire');
+    setType('');
     setName('');
     setPhone('');
     setNote('');
     setFormError(null);
+    setTypeOpen(false);
+    setNewTypeName('');
+    setTypeFormError(null);
+  };
+
+  const slugifyType = (label: string) =>
+    label
+      .toLowerCase()
+      .trim()
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '') || `custom_${Date.now()}`;
+
+  const handleAddType = () => {
+    const label = newTypeName.trim();
+    if (label.length < 2) {
+      setTypeFormError('Enter a type name.');
+      return;
+    }
+    const existing = formTypes.find((item) => item.label.toLowerCase() === label.toLowerCase());
+    if (existing) {
+      setType(existing.value);
+      setTypeOpen(false);
+      setNewTypeName('');
+      setTypeFormError(null);
+      return;
+    }
+    const option: DirectoryTypeOption = {
+      value: slugifyType(label),
+      label,
+      icon: 'call',
+      custom: true,
+    };
+    setCustomTypes((current) => [...current, option]);
+    setType(option.value);
+    setTypeOpen(false);
+    setNewTypeName('');
+    setTypeFormError(null);
   };
 
   const call = async (contact: DirectoryContact) => {
@@ -156,8 +220,10 @@ export default function DirectoryScreen() {
     setCreating(true);
     setFormError(null);
     try {
+      const selected = formTypes.find((item) => item.value === type);
       await createDirectoryContact({
-        type,
+        type: selected && !selected.custom ? selected.value : undefined,
+        typeLabel: selected?.custom ? selected.label : undefined,
         name: name.trim(),
         phone: phone.trim(),
         note: note.trim() || undefined,
@@ -282,19 +348,40 @@ export default function DirectoryScreen() {
           <Pressable style={styles.backdrop} onPress={() => setCreateOpen(false)} />
           <View style={[styles.sheet, { paddingBottom: insets.bottom + spacing.lg }]}>
             <View style={styles.sheetHandle} />
+            {typeOpen ? (
+              <>
+                <Text style={styles.sheetTitle}>New type</Text>
+                <Text style={styles.sheetSubtitle}>Optional. Use this if none of the presets fit.</Text>
+                <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.form}>
+                  <Input
+                    label="Type name"
+                    value={newTypeName}
+                    onChangeText={(value) => {
+                      setNewTypeName(value);
+                      setTypeFormError(null);
+                    }}
+                    placeholder="e.g. Ambulance"
+                  />
+                  {typeFormError ? <Text style={styles.error}>{typeFormError}</Text> : null}
+                  <Button title="Add type" onPress={handleAddType} />
+                  <Button title="Back" variant="ghost" onPress={() => setTypeOpen(false)} />
+                </ScrollView>
+              </>
+            ) : (
+              <>
             <Text style={styles.sheetTitle}>Add contact</Text>
             <Text style={styles.sheetSubtitle}>Residents can tap to call this number.</Text>
             <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.form}>
-              <Text style={styles.fieldLabel}>Type</Text>
+              <Text style={styles.fieldLabel}>Type (optional)</Text>
               <View style={styles.typeGrid}>
-                {(types.length ? types : []).map((option) => {
+                {formTypes.map((option) => {
                   const selected = type === option.value;
                   const tone = TYPE_COLORS[option.value] ?? TYPE_COLORS.welfare;
                   const icon = TYPE_ICONS[option.icon] ?? TYPE_ICONS[option.value] ?? 'call';
                   return (
                     <Pressable
                       key={option.value}
-                      onPress={() => setType(option.value)}
+                      onPress={() => setType(selected ? '' : option.value)}
                       style={[styles.typeTile, { width: tileWidth }, selected && styles.typeTileActive]}
                     >
                       <View style={[styles.typeIcon, { backgroundColor: tone.bg }]}>
@@ -306,6 +393,18 @@ export default function DirectoryScreen() {
                     </Pressable>
                   );
                 })}
+                <Pressable
+                  onPress={() => {
+                    setTypeFormError(null);
+                    setTypeOpen(true);
+                  }}
+                  style={[styles.typeTile, styles.typeTileAdd, { width: tileWidth }]}
+                >
+                  <View style={styles.typeAddIcon}>
+                    <Ionicons name="add" size={18} color={colors.primary} />
+                  </View>
+                  <Text style={styles.typeAddLabel}>New type</Text>
+                </Pressable>
               </View>
               <Input label="Name" value={name} onChangeText={setName} placeholder="Dhaka Fire Service" />
               <Input
@@ -320,6 +419,8 @@ export default function DirectoryScreen() {
               <Button title="Save contact" loading={creating} onPress={() => void handleCreate()} />
               <Button title="Cancel" variant="ghost" onPress={() => setCreateOpen(false)} />
             </ScrollView>
+              </>
+            )}
           </View>
         </KeyboardAvoidingView>
       </Modal>
@@ -461,6 +562,20 @@ const styles = StyleSheet.create({
   },
   typeLabel: { fontSize: 12, fontWeight: '700', color: colors.text, lineHeight: 16 },
   typeLabelActive: { color: colors.primaryDark },
+  typeTileAdd: {
+    borderStyle: 'dashed',
+    borderColor: colors.primaryMuted,
+    backgroundColor: colors.primaryLight,
+  },
+  typeAddIcon: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: colors.white,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  typeAddLabel: { fontSize: 12, fontWeight: '700', color: colors.primary, lineHeight: 16 },
   confirmWrap: { flex: 1, justifyContent: 'center', padding: spacing.lg },
   confirmCard: {
     backgroundColor: colors.surface,
