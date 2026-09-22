@@ -6,9 +6,12 @@ import { PageHeader } from '../../src/components/PageHeader';
 import { fetchNotices } from '../../src/services/notices.service';
 import { fetchElections, openElectionCount } from '../../src/services/elections.service';
 import { colors, spacing, borderRadius, shadows } from '../../src/theme';
+import { useAuthStore } from '../../src/stores/auth.store';
+import { isGuard } from '../../src/types';
 
 export default function CommunityScreen() {
   const router = useRouter();
+  const guard = isGuard(useAuthStore((s) => s.user)?.role);
   const [newCount, setNewCount] = useState(0);
   const [openVotes, setOpenVotes] = useState(0);
 
@@ -17,10 +20,14 @@ export default function CommunityScreen() {
       void fetchNotices()
         .then((data) => setNewCount(data.notices.filter((n) => n.isNew).length))
         .catch(() => setNewCount(0));
+      if (guard) {
+        setOpenVotes(0);
+        return;
+      }
       void fetchElections()
         .then((data) => setOpenVotes(openElectionCount(data.elections)))
         .catch(() => setOpenVotes(0));
-    }, []),
+    }, [guard]),
   );
 
   return (
@@ -41,24 +48,26 @@ export default function CommunityScreen() {
           <View style={styles.blob} />
         </Pressable>
 
-        <View style={styles.grid}>
-          <Pressable style={styles.card} onPress={() => router.push('/marketplace')}>
-            <View style={[styles.cardIcon, { backgroundColor: '#FFFBEB' }]}>
-              <Ionicons name="storefront" size={20} color="#D97706" />
-            </View>
-            <Text style={styles.cardTitle}>Marketplace</Text>
-            <Text style={styles.cardDesc}>Buy & Sell items</Text>
-          </Pressable>
-          <Pressable style={styles.card} onPress={() => router.push('/voting')}>
-            <View style={[styles.cardIcon, { backgroundColor: colors.emeraldLight }]}>
-              <Ionicons name="checkbox" size={20} color={colors.success} />
-            </View>
-            <Text style={styles.cardTitle}>Elections</Text>
-            <Text style={styles.cardDesc}>
-              {openVotes > 0 ? `${openVotes} open election${openVotes === 1 ? '' : 's'}` : 'View elections'}
-            </Text>
-          </Pressable>
-        </View>
+        {guard ? null : (
+          <View style={styles.grid}>
+            <Pressable style={styles.card} onPress={() => router.push('/marketplace')}>
+              <View style={[styles.cardIcon, { backgroundColor: '#FFFBEB' }]}>
+                <Ionicons name="storefront" size={20} color="#D97706" />
+              </View>
+              <Text style={styles.cardTitle}>Marketplace</Text>
+              <Text style={styles.cardDesc}>Buy & Sell items</Text>
+            </Pressable>
+            <Pressable style={styles.card} onPress={() => router.push('/voting')}>
+              <View style={[styles.cardIcon, { backgroundColor: colors.emeraldLight }]}>
+                <Ionicons name="checkbox" size={20} color={colors.success} />
+              </View>
+              <Text style={styles.cardTitle}>Elections</Text>
+              <Text style={styles.cardDesc}>
+                {openVotes > 0 ? `${openVotes} open election${openVotes === 1 ? '' : 's'}` : 'View elections'}
+              </Text>
+            </Pressable>
+          </View>
+        )}
       </ScrollView>
     </View>
   );

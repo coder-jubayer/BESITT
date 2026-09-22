@@ -29,7 +29,10 @@ export function errorHandler(
     const code = (err as { code?: string }).code;
     res.status(400).json({
       success: false,
-      message: code === 'LIMIT_FILE_SIZE' ? 'Each image must be under 5MB' : err.message || 'Upload failed',
+      message:
+        code === 'LIMIT_FILE_SIZE'
+          ? 'That file is too large to upload'
+          : err.message || 'Upload failed',
     });
     return;
   }

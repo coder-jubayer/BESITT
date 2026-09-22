@@ -65,6 +65,10 @@ export function canManageAmenityBookings(role?: UserRole | null): boolean {
   return isBuildingAdmin(role) || isAppAdmin(role);
 }
 
+export function canViewAmenitySchedule(role?: UserRole | null): boolean {
+  return canManageAmenityBookings(role) || isGuard(role);
+}
+
 export function canCreateGuestVisits(role?: UserRole | null): boolean {
   return role === 'guard';
 }
@@ -75,6 +79,10 @@ export function canDecideGuestVisits(role?: UserRole | null): boolean {
 
 export function isResident(role?: UserRole | null): boolean {
   return role === 'resident';
+}
+
+export function isGuard(role?: UserRole | null): boolean {
+  return role === 'guard';
 }
 
 export function canMutateUser(actorId?: string, actorRole?: UserRole | null, target?: User | null): boolean {
@@ -90,21 +98,47 @@ export function canMutateUser(actorId?: string, actorRole?: UserRole | null, tar
 export interface Building {
   id: string;
   name: string;
+  code?: string;
   isActive?: boolean;
+}
+
+export type BuildingAccessStatus = 'locked' | 'trial' | 'active' | 'expired';
+
+export interface BuildingAccess {
+  status: BuildingAccessStatus;
+  canWrite: boolean;
+  trialClaimed: boolean;
+  trialStartedAt?: string;
+  trialEndsAt?: string;
+  trialDaysGranted?: number;
+  trialDaysRemaining?: number;
+  activatedAt?: string;
+  expiresAt?: string;
+}
+
+export interface PlatformSettings {
+  freeTrialEnabled: boolean;
+  freeTrialDays: number;
+  supportWhatsApp: string;
+  freeTrialLabel: string;
 }
 
 export interface User {
   id: string;
   name: string;
-  email: string;
+  /** Absent for residents who registered with a building code and sign in by phone. */
+  email?: string;
   phone?: string;
   avatar?: string;
   role: UserRole;
   unitNumber?: string;
   buildingId?: string;
   buildingName?: string;
+  buildingCode?: string;
   isActive?: boolean;
   createdAt?: string;
+  buildingAccess?: BuildingAccess;
+  platform?: PlatformSettings;
 }
 
 export interface ApiResponse<T = unknown> {
@@ -183,16 +217,59 @@ export interface ExpenseBreakdown {
   percent: number;
 }
 
+export interface ResidentDueSummary {
+  isSet: boolean;
+  amount: number;
+  note?: string;
+  setByName?: string;
+  residentCount: number;
+  collectedCount: number;
+  pendingCount: number;
+  expectedTotal: number;
+  collectedTotal: number;
+}
+
+export interface MyResidentDue {
+  isSet: boolean;
+  amount: number;
+  dueAmount: number;
+  collected: boolean;
+  collectedAt?: string;
+  note?: string;
+}
+
+export interface ResidentDueRow {
+  id: string;
+  name: string;
+  unitNumber?: string;
+  avatar?: string;
+  collected: boolean;
+  collectedAt?: string;
+  dueAmount: number;
+}
+
+export interface ResidentDuesResponse {
+  year: number;
+  month: number;
+  monthLabel: string;
+  canManage: boolean;
+  summary: ResidentDueSummary;
+  residents: ResidentDueRow[];
+}
+
 export interface ExpensesMonthResponse {
   year: number;
   month: number;
   monthLabel: string;
   total: number;
   canManage: boolean;
+  canManageDues?: boolean;
   categories: ExpenseCategoryOption[];
   breakdown: ExpenseBreakdown[];
   expenses: ExpenseItem[];
   buildings?: Building[];
+  residentDue?: MyResidentDue;
+  residentDueSummary?: ResidentDueSummary;
 }
 
 export type DirectoryType = string;
@@ -331,6 +408,24 @@ export interface InboxGroup {
   unread: number;
 }
 
+export type ChatAttachmentKind = 'image' | 'video' | 'file';
+
+export interface ChatAttachment {
+  url: string;
+  name: string;
+  mime: string;
+  size: number;
+  kind: ChatAttachmentKind;
+}
+
+export interface PendingAttachment {
+  uri: string;
+  name: string;
+  type: string;
+  kind: ChatAttachmentKind;
+  size?: number;
+}
+
 export interface InboxGroupMessage {
   id: string;
   groupId: string;
@@ -338,6 +433,7 @@ export interface InboxGroupMessage {
   senderName: string;
   text: string;
   image?: string;
+  attachment?: ChatAttachment;
   mine: boolean;
   seen?: boolean;
   createdAt: string;
@@ -355,6 +451,7 @@ export interface InboxChatMessage {
   senderName: string;
   text: string;
   image?: string;
+  attachment?: ChatAttachment;
   mine: boolean;
   seen?: boolean;
   createdAt: string;
@@ -382,6 +479,18 @@ export interface ElectionCandidate {
   percent?: number;
 }
 
+export interface ElectionWinner {
+  candidateId: string;
+  name: string;
+  unitNumber?: string;
+  image?: string;
+  /** Only present when vote counts are visible to this viewer. */
+  votes?: number;
+  percent?: number;
+  tied: boolean;
+  tiedNames?: string[];
+}
+
 export interface ElectionSummary {
   id: string;
   buildingId: string;
@@ -401,6 +510,8 @@ export interface ElectionSummary {
   hasVoted: boolean;
   myCandidateId?: string;
   resultsVisible: boolean;
+  /** Set once the election has closed; null when it ended with no votes. */
+  winner?: ElectionWinner | null;
   createdByName?: string;
 }
 
@@ -561,6 +672,7 @@ export interface AmenitySlotsResponse {
   };
   canBook: boolean;
   canManage?: boolean;
+  canViewSchedule?: boolean;
   slotMinuteOptions?: number[];
   dayBookings?: AmenityBooking[];
   slots: AmenitySlot[];
@@ -575,6 +687,7 @@ export interface AmenitiesListResponse {
   nextBooking?: AmenityBooking | null;
   canBook: boolean;
   canManage?: boolean;
+  canViewSchedule?: boolean;
   slotMinuteOptions?: number[];
   buildings?: Building[];
 }

@@ -16,6 +16,7 @@ import {
 } from 'react-native';
 import { useFocusEffect, useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
+import * as DocumentPicker from 'expo-document-picker';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, spacing, borderRadius, shadows } from '../src/theme';
@@ -41,12 +42,14 @@ import {
 } from '../src/services/inbox.service';
 import { formatChatTime } from '../src/utils/date';
 import {
+  ChatAttachment,
   InboxChatMessage,
   InboxGroup,
   InboxGroupMessage,
   InboxThread,
   MarketplaceChatMessage,
   MarketplaceThread,
+  PendingAttachment,
   ROLE_LABELS,
   UserRole,
 } from '../src/types';
@@ -57,6 +60,35 @@ type ChatKind = TabKey;
 function firstParam(value?: string | string[]): string {
   if (!value) return '';
   return Array.isArray(value) ? value[0] ?? '' : value;
+}
+
+const ATTACHMENT_PLACEHOLDERS = ['Sent a photo', 'Sent a video', 'Sent a document'];
+
+const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
+
+function formatFileSize(bytes?: number): string {
+  if (!bytes || bytes < 1) return '';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function documentIcon(nameOrMime: string): keyof typeof Ionicons.glyphMap {
+  const value = nameOrMime.toLowerCase();
+  if (value.includes('pdf')) return 'document-text';
+  if (/\.(zip|rar|7z)$/.test(value) || value.includes('zip')) return 'file-tray-full';
+  if (/\.(xls|xlsx|csv|ods)$/.test(value) || value.includes('sheet') || value.includes('excel')) {
+    return 'grid';
+  }
+  if (/\.(ppt|pptx|odp)$/.test(value) || value.includes('presentation')) return 'easel';
+  return 'document';
+}
+
+/** Older messages only carry a bare `image` URL, so they are widened to the shared shape. */
+function messageAttachment(item: { image?: string; attachment?: ChatAttachment }): ChatAttachment | undefined {
+  if (item.attachment) return item.attachment;
+  if (item.image) return { url: item.image, name: 'photo', mime: 'image/*', size: 0, kind: 'image' };
+  return undefined;
 }
 
 function roleLabel(role?: string) {
@@ -136,7 +168,8 @@ export default function MessagesScreen() {
   const [activeGroup, setActiveGroup] = useState<InboxGroup | null>(null);
   const [messages, setMessages] = useState<Array<MarketplaceChatMessage | InboxChatMessage | InboxGroupMessage>>([]);
   const [draft, setDraft] = useState('');
-  const [pendingPhoto, setPendingPhoto] = useState<{ uri: string; name?: string; type?: string } | null>(null);
+  const [pendingAttachment, setPendingAttachment] = useState<PendingAttachment | null>(null);
+  const [attachMenuOpen, setAttachMenuOpen] = useState(false);
   const [viewer, setViewer] = useState<MediaViewerItem | null>(null);
   const [sending, setSending] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
@@ -324,7 +357,11 @@ export default function MessagesScreen() {
     return groups.filter((group) => group.name.toLowerCase().includes(q));
   }, [groups, groupSearch]);
 
+  // Marketplace chats stay photo-only; documents are an inbox and group-chat feature.
+  const supportsDocuments = chatKind === 'inbox' || chatKind === 'groups';
+
   const pickChatPhoto = async () => {
+    setAttachMenuOpen(false);
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
       showToast('Photo library permission is required.');
@@ -337,21 +374,53 @@ export default function MessagesScreen() {
     });
     if (result.canceled || !result.assets[0]) return;
     const asset = result.assets[0];
-    setPendingPhoto({
+    setPendingAttachment({
       uri: asset.uri,
       name: asset.fileName || 'photo.jpg',
       type: asset.mimeType || 'image/jpeg',
+      kind: 'image',
+      size: asset.fileSize,
     });
+  };
+
+  const pickChatDocument = async () => {
+    setAttachMenuOpen(false);
+    const result = await DocumentPicker.getDocumentAsync({
+      type: '*/*',
+      copyToCacheDirectory: true,
+      multiple: false,
+    });
+    if (result.canceled || !result.assets?.[0]) return;
+    const asset = result.assets[0];
+    if (asset.size && asset.size > MAX_ATTACHMENT_BYTES) {
+      showToast('Files must be 25 MB or smaller.');
+      return;
+    }
+    setPendingAttachment({
+      uri: asset.uri,
+      name: asset.name || 'document',
+      type: asset.mimeType || 'application/octet-stream',
+      kind: 'file',
+      size: asset.size ?? undefined,
+    });
+  };
+
+  const openAttachMenu = () => {
+    if (!supportsDocuments) {
+      void pickChatPhoto();
+      return;
+    }
+    setAttachMenuOpen(true);
   };
 
   const handleSend = async () => {
     if (!chatId || !chatKind || sending) return;
-    if (!draft.trim() && !pendingPhoto) return;
+    if (!draft.trim() && !pendingAttachment) return;
     setSending(true);
     const text = draft.trim();
-    const photo = pendingPhoto;
+    const photo = pendingAttachment;
     setDraft('');
-    setPendingPhoto(null);
+    setPendingAttachment(null);
     try {
       if (chatKind === 'marketplace') {
         const result = await sendMarketplaceMessage(chatId, text, photo || undefined);
@@ -378,7 +447,7 @@ export default function MessagesScreen() {
       }
     } catch (err) {
       setDraft(text);
-      setPendingPhoto(photo);
+      setPendingAttachment(photo);
       showToast(err instanceof Error ? err.message : 'Failed to send');
     } finally {
       setSending(false);
@@ -433,7 +502,8 @@ export default function MessagesScreen() {
     setActiveGroup(null);
     setMessages([]);
     setDraft('');
-    setPendingPhoto(null);
+    setPendingAttachment(null);
+    setAttachMenuOpen(false);
     setMenuOpen(false);
     setMembersOpen(false);
     setRenameOpen(false);
@@ -538,37 +608,106 @@ export default function MessagesScreen() {
                   : 'Start the conversation.'}
             </Text>
           ) : null}
-          {messages.map((item) => (
-            <View key={item.id} style={item.mine ? styles.bubbleRight : styles.bubbleLeft}>
-              {chatKind === 'groups' && !item.mine ? (
-                <Text style={styles.senderName}>{item.senderName}</Text>
-              ) : null}
-              {'image' in item && item.image ? (
-                <Pressable onPress={() => setViewer({ url: item.image!, kind: 'image' })}>
-                  <Image source={{ uri: item.image }} style={styles.bubbleImage} />
-                </Pressable>
-              ) : null}
-              {item.text && !('image' in item && item.image && item.text === 'Sent a photo') ? (
-                <Text style={item.mine ? styles.bubbleRightText : styles.bubbleLeftText}>{item.text}</Text>
-              ) : null}
-              <View style={styles.metaRow}>
-                <Text style={item.mine ? styles.timeRight : styles.timeLeft}>{formatChatTime(item.createdAt)}</Text>
-                {item.mine ? <SeenTicks seen={item.seen} /> : null}
+          {messages.map((item) => {
+            const attachment = messageAttachment(item);
+            const hideCaption =
+              Boolean(attachment) && ATTACHMENT_PLACEHOLDERS.includes(item.text);
+            return (
+              <View key={item.id} style={item.mine ? styles.bubbleRight : styles.bubbleLeft}>
+                {chatKind === 'groups' && !item.mine ? (
+                  <Text style={styles.senderName}>{item.senderName}</Text>
+                ) : null}
+                {attachment && attachment.kind === 'image' ? (
+                  <Pressable onPress={() => setViewer({ url: attachment.url, kind: 'image' })}>
+                    <Image source={{ uri: attachment.url }} style={styles.bubbleImage} />
+                  </Pressable>
+                ) : null}
+                {attachment && attachment.kind === 'video' ? (
+                  <Pressable
+                    onPress={() => setViewer({ url: attachment.url, kind: 'video' })}
+                    style={styles.videoBubble}
+                  >
+                    <Ionicons name="play-circle" size={44} color={colors.white} />
+                    <Text style={styles.videoBubbleText} numberOfLines={1}>
+                      {attachment.name}
+                    </Text>
+                  </Pressable>
+                ) : null}
+                {attachment && attachment.kind === 'file' ? (
+                  <Pressable
+                    onPress={() => void Linking.openURL(attachment.url)}
+                    style={[styles.fileBubble, item.mine && styles.fileBubbleMine]}
+                  >
+                    <View style={[styles.fileIcon, item.mine && styles.fileIconMine]}>
+                      <Ionicons
+                        name={documentIcon(`${attachment.name} ${attachment.mime}`)}
+                        size={20}
+                        color={item.mine ? colors.white : colors.primary}
+                      />
+                    </View>
+                    <View style={styles.fileInfo}>
+                      <Text
+                        style={[styles.fileName, item.mine && styles.fileNameMine]}
+                        numberOfLines={2}
+                      >
+                        {attachment.name}
+                      </Text>
+                      <Text style={[styles.fileMeta, item.mine && styles.fileMetaMine]}>
+                        {formatFileSize(attachment.size) || 'Tap to open'}
+                      </Text>
+                    </View>
+                    <Ionicons
+                      name="download-outline"
+                      size={18}
+                      color={item.mine ? colors.white : colors.textSecondary}
+                    />
+                  </Pressable>
+                ) : null}
+                {item.text && !hideCaption ? (
+                  <Text style={item.mine ? styles.bubbleRightText : styles.bubbleLeftText}>{item.text}</Text>
+                ) : null}
+                <View style={styles.metaRow}>
+                  <Text style={item.mine ? styles.timeRight : styles.timeLeft}>{formatChatTime(item.createdAt)}</Text>
+                  {item.mine ? <SeenTicks seen={item.seen} /> : null}
+                </View>
               </View>
-            </View>
-          ))}
+            );
+          })}
         </ScrollView>
-        {pendingPhoto ? (
-          <View style={styles.pendingPhotoRow}>
-            <Image source={{ uri: pendingPhoto.uri }} style={styles.pendingPhoto} />
-            <Pressable style={styles.pendingRemove} onPress={() => setPendingPhoto(null)}>
-              <Ionicons name="close" size={14} color={colors.white} />
-            </Pressable>
-          </View>
+        {pendingAttachment ? (
+          pendingAttachment.kind === 'image' ? (
+            <View style={styles.pendingPhotoRow}>
+              <Image source={{ uri: pendingAttachment.uri }} style={styles.pendingPhoto} />
+              <Pressable style={styles.pendingRemove} onPress={() => setPendingAttachment(null)}>
+                <Ionicons name="close" size={14} color={colors.white} />
+              </Pressable>
+            </View>
+          ) : (
+            <View style={styles.pendingFileRow}>
+              <View style={styles.fileIcon}>
+                <Ionicons
+                  name={documentIcon(`${pendingAttachment.name} ${pendingAttachment.type}`)}
+                  size={20}
+                  color={colors.primary}
+                />
+              </View>
+              <View style={styles.fileInfo}>
+                <Text style={styles.fileName} numberOfLines={1}>
+                  {pendingAttachment.name}
+                </Text>
+                <Text style={styles.fileMeta}>
+                  {formatFileSize(pendingAttachment.size) || 'Ready to send'}
+                </Text>
+              </View>
+              <Pressable onPress={() => setPendingAttachment(null)} hitSlop={8}>
+                <Ionicons name="close-circle" size={22} color={colors.textMuted} />
+              </Pressable>
+            </View>
+          )
         ) : null}
         <View style={[styles.composer, { paddingBottom: Math.max(insets.bottom, 12) }]}>
-          <Pressable style={styles.attachBtn} onPress={() => void pickChatPhoto()}>
-            <Ionicons name="image" size={22} color={colors.primary} />
+          <Pressable style={styles.attachBtn} onPress={openAttachMenu}>
+            <Ionicons name={supportsDocuments ? 'attach' : 'image'} size={22} color={colors.primary} />
           </Pressable>
           <TextInput
             style={styles.input}
@@ -581,11 +720,39 @@ export default function MessagesScreen() {
           <Pressable
             style={styles.send}
             onPress={() => void handleSend()}
-            disabled={sending || (!draft.trim() && !pendingPhoto)}
+            disabled={sending || (!draft.trim() && !pendingAttachment)}
           >
             <Ionicons name="send" size={18} color={colors.white} />
           </Pressable>
         </View>
+
+        <Modal
+          visible={attachMenuOpen}
+          animationType="fade"
+          transparent
+          onRequestClose={() => setAttachMenuOpen(false)}
+        >
+          <View style={styles.modalWrap}>
+            <Pressable style={styles.backdrop} onPress={() => setAttachMenuOpen(false)} />
+            <View style={styles.menuSheet}>
+              <PopupHeader title="Attach" onClose={() => setAttachMenuOpen(false)} />
+              <Pressable style={styles.menuRow} onPress={() => void pickChatPhoto()}>
+                <Ionicons name="image" size={20} color={colors.primary} />
+                <View style={styles.fileInfo}>
+                  <Text style={styles.menuLabel}>Photo</Text>
+                  <Text style={styles.fileMeta}>From your gallery</Text>
+                </View>
+              </Pressable>
+              <Pressable style={styles.menuRow} onPress={() => void pickChatDocument()}>
+                <Ionicons name="document-text" size={20} color={colors.primary} />
+                <View style={styles.fileInfo}>
+                  <Text style={styles.menuLabel}>Document</Text>
+                  <Text style={styles.fileMeta}>PDF, Word, Excel, ZIP and more</Text>
+                </View>
+              </Pressable>
+            </View>
+          </View>
+        </Modal>
         <Modal visible={menuOpen} animationType="fade" transparent onRequestClose={() => setMenuOpen(false)}>
           <View style={styles.modalWrap}>
             <Pressable style={styles.backdrop} onPress={() => setMenuOpen(false)} />
@@ -1089,6 +1256,54 @@ const styles = StyleSheet.create({
   },
   timeRight: { fontSize: 10, color: '#C7D2FE' },
   metaRow: { flexDirection: 'row', alignItems: 'center', marginTop: 4, justifyContent: 'flex-end' },
+  videoBubble: {
+    width: 180,
+    height: 120,
+    borderRadius: 12,
+    marginBottom: 6,
+    backgroundColor: colors.slate800,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+  },
+  videoBubbleText: { color: colors.white, fontSize: 11 },
+  fileBubble: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    minWidth: 200,
+    maxWidth: 240,
+    padding: 10,
+    borderRadius: 12,
+    marginBottom: 6,
+    backgroundColor: colors.slate100,
+  },
+  fileBubbleMine: { backgroundColor: 'rgba(255,255,255,0.18)' },
+  fileIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.white,
+  },
+  fileIconMine: { backgroundColor: 'rgba(255,255,255,0.25)' },
+  fileInfo: { flex: 1 },
+  fileName: { fontSize: 13, fontWeight: '700', color: colors.text },
+  fileNameMine: { color: colors.white },
+  fileMeta: { fontSize: 11, color: colors.textSecondary, marginTop: 2 },
+  fileMetaMine: { color: '#E0E7FF' },
+  pendingFileRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    backgroundColor: colors.surface,
+    borderTopWidth: 1,
+    borderTopColor: colors.slate200,
+  },
   pendingPhotoRow: {
     paddingHorizontal: spacing.md,
     paddingTop: spacing.sm,

@@ -10,6 +10,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Image,
+  Share,
 } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -183,6 +184,31 @@ export default function UsersScreen() {
           }} />
         }
       >
+        {currentUser?.buildingCode ? (
+          <Card>
+            <View style={styles.codeRow}>
+              <View style={styles.codeInfo}>
+                <Text style={styles.codeLabel}>BUILDING JOIN CODE</Text>
+                <Text style={styles.codeValue}>{currentUser.buildingCode}</Text>
+                <Text style={styles.codeHint}>
+                  Share this with residents so they can create their own accounts.
+                </Text>
+              </View>
+              <Pressable
+                onPress={() =>
+                  void Share.share({
+                    message: `Join ${currentUser.buildingName ?? 'our building'} on Barighorr with code ${currentUser.buildingCode}`,
+                  })
+                }
+                style={styles.codeShare}
+                hitSlop={8}
+              >
+                <Ionicons name="share-outline" size={18} color={colors.primary} />
+              </Pressable>
+            </View>
+          </Card>
+        ) : null}
+
         {error ? (
           <Card>
             <Text style={styles.error}>{error}</Text>
@@ -206,7 +232,7 @@ export default function UsersScreen() {
                 </View>
                 <View style={styles.userInfo}>
                   <Text style={styles.name}>{user.name}</Text>
-                  <Text style={styles.email}>{user.email}</Text>
+                  <Text style={styles.email}>{user.email || user.phone}</Text>
                   <Text style={styles.meta}>
                     {ROLE_LABELS[user.role]}
                     {user.unitNumber ? ` · Apt ${user.unitNumber}` : ''}
@@ -422,7 +448,7 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     marginTop: spacing.xs,
   },
-  content: { padding: spacing.lg, gap: spacing.md },
+  content: { padding: spacing.lg, paddingTop: spacing.md, gap: spacing.md },
   fab: {
     position: 'absolute',
     right: spacing.lg,
@@ -453,6 +479,19 @@ const styles = StyleSheet.create({
   meta: { ...typography.caption, color: colors.textMuted, marginTop: 2 },
   muted: { ...typography.bodySmall, color: colors.textSecondary, textAlign: 'center' },
   error: { color: colors.error, fontSize: 13, textAlign: 'center' },
+  codeRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  codeInfo: { flex: 1, gap: 2 },
+  codeLabel: { ...typography.caption, color: colors.textMuted, letterSpacing: 0.5 },
+  codeValue: { fontSize: 24, fontWeight: '800', color: colors.text, letterSpacing: 4 },
+  codeHint: { ...typography.caption, color: colors.textSecondary, lineHeight: 14 },
+  codeShare: {
+    width: 40,
+    height: 40,
+    borderRadius: borderRadius.full,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.primaryLight,
+  },
   actions: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md },
   actionBtn: {
     flex: 1,

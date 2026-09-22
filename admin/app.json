@@ -1,0 +1,49 @@
+{
+  "expo": {
+    "name": "Barighorr Admin",
+    "slug": "barighorr-admin",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "scheme": "barighorr-admin",
+    "userInterfaceStyle": "light",
+    "backgroundColor": "#FFFFFF",
+    "androidNavigationBar": {
+      "barStyle": "dark-content"
+    },
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#000000"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.barighorr.admin"
+    },
+    "android": {
+      "package": "com.barighorr.admin",
+      "versionCode": 1,
+      "usesCleartextTraffic": true,
+      "permissions": ["INTERNET", "ACCESS_NETWORK_STATE"],
+      "backgroundColor": "#FFFFFF",
+      "adaptiveIcon": {
+        "backgroundColor": "#000000",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      }
+    },
+    "web": {
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro"
+    },
+    "plugins": ["expo-router", "expo-secure-store", "expo-sharing", "expo-status-bar"],
+    "experiments": {
+      "typedRoutes": false
+    },
+    "extra": {
+      "apiUrl": "http://64.176.81.197:3011/api/v1"
+    }
+  }
+}

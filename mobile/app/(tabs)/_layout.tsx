@@ -3,8 +3,12 @@ import { View, StyleSheet } from 'react-native';
 import { CustomTabBar } from '../../src/components/CustomTabBar';
 import { FloatingChatButton } from '../../src/components/FloatingChatButton';
 import { colors } from '../../src/theme';
+import { useAuthStore } from '../../src/stores/auth.store';
+import { isGuard } from '../../src/types';
 
 export default function TabsLayout() {
+  const guard = isGuard(useAuthStore((s) => s.user)?.role);
+
   return (
     <View style={styles.root}>
       <Tabs
@@ -17,7 +21,7 @@ export default function TabsLayout() {
         <Tabs.Screen name="guests" />
         <Tabs.Screen name="profile" />
       </Tabs>
-      <FloatingChatButton />
+      {guard ? null : <FloatingChatButton />}
     </View>
   );
 }

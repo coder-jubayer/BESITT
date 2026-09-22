@@ -8,7 +8,21 @@ import type {
   InboxGroupMessage,
   InboxThread,
   InboxThreadDetail,
+  PendingAttachment,
 } from '../types';
+
+/**
+ * Images keep the legacy `image` field so older servers still accept them; anything
+ * else goes up as `attachment`.
+ */
+export function appendChatAttachment(form: FormData, attachment: PendingAttachment): void {
+  const field = attachment.kind === 'image' ? 'image' : 'attachment';
+  form.append(field, {
+    uri: attachment.uri,
+    name: attachment.name || 'attachment',
+    type: attachment.type || 'application/octet-stream',
+  } as unknown as Blob);
+}
 
 export async function fetchInboxDirectory(buildingId?: string): Promise<InboxDirectoryResponse> {
   const { data } = await apiClient.get<ApiResponse<InboxDirectoryResponse>>('/inbox/directory', {
@@ -47,17 +61,11 @@ export async function fetchInboxThread(threadId: string): Promise<InboxThreadDet
 export async function sendInboxMessage(
   threadId: string,
   text: string,
-  image?: { uri: string; name?: string; type?: string },
+  attachment?: PendingAttachment,
 ): Promise<{ message: InboxChatMessage; thread: InboxThread }> {
   const form = new FormData();
   if (text.trim()) form.append('text', text.trim());
-  if (image) {
-    form.append('image', {
-      uri: image.uri,
-      name: image.name || 'photo.jpg',
-      type: image.type || 'image/jpeg',
-    } as unknown as Blob);
-  }
+  if (attachment) appendChatAttachment(form, attachment);
   const { data } = await apiClient.post<ApiResponse<{ message: InboxChatMessage; thread: InboxThread }>>(
     `/inbox/threads/${threadId}/messages`,
     form,
@@ -144,17 +152,11 @@ export async function addInboxGroupMembers(groupId: string, memberIds: string[])
 export async function sendInboxGroupMessage(
   groupId: string,
   text: string,
-  image?: { uri: string; name?: string; type?: string },
+  attachment?: PendingAttachment,
 ): Promise<{ message: InboxGroupMessage; group: InboxGroup }> {
   const form = new FormData();
   if (text.trim()) form.append('text', text.trim());
-  if (image) {
-    form.append('image', {
-      uri: image.uri,
-      name: image.name || 'photo.jpg',
-      type: image.type || 'image/jpeg',
-    } as unknown as Blob);
-  }
+  if (attachment) appendChatAttachment(form, attachment);
   const { data } = await apiClient.post<ApiResponse<{ message: InboxGroupMessage; group: InboxGroup }>>(
     `/inbox/groups/${groupId}/messages`,
     form,

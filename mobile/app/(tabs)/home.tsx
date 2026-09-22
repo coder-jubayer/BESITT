@@ -17,7 +17,7 @@ import { fetchAmenities } from '../../src/services/amenities.service';
 import { fetchGuests } from '../../src/services/guests.service';
 import { formatNoticeDate, formatSlotTime } from '../../src/utils/date';
 import { formatMoney } from '../../src/utils/money';
-import { AmenityBooking, GuestVisit, Notice, isResident } from '../../src/types';
+import { AmenityBooking, GuestVisit, Notice, isGuard, isResident } from '../../src/types';
 import { colors, spacing, borderRadius, typography, shadows } from '../../src/theme';
 
 export default function HomeScreen() {
@@ -28,9 +28,11 @@ export default function HomeScreen() {
   const [unreadCount, setUnreadCount] = useState(0);
   const [monthTotal, setMonthTotal] = useState<number | null>(null);
   const [monthLabel, setMonthLabel] = useState('');
+  const [myDue, setMyDue] = useState<number | null>(null);
   const [nextBooking, setNextBooking] = useState<AmenityBooking | null>(null);
   const [pendingGuests, setPendingGuests] = useState<GuestVisit[]>([]);
   const resident = isResident(user?.role);
+  const guard = isGuard(user?.role);
 
   useFocusEffect(
     useCallback(() => {
@@ -38,28 +40,37 @@ export default function HomeScreen() {
       void fetchNotices()
         .then((data) => {
           setRecentNotices(data.notices.slice(0, 2));
-          setUnreadCount(resident ? (data.unreadCount ?? 0) : 0);
+          setUnreadCount(data.unreadCount ?? 0);
         })
         .catch(() => {
           setRecentNotices([]);
           setUnreadCount(0);
         });
-      void fetchExpenses({ year: today.getFullYear(), month: today.getMonth() + 1 })
-        .then((data) => {
-          setMonthTotal(data.total);
-          setMonthLabel(data.monthLabel);
-        })
-        .catch(() => {
-          setMonthTotal(null);
-          setMonthLabel('');
-        });
-      void fetchAmenities()
-        .then((data) => {
-          setNextBooking(data.nextBooking ?? null);
-        })
-        .catch(() => {
-          setNextBooking(null);
-        });
+      if (!guard) {
+        void fetchExpenses({ year: today.getFullYear(), month: today.getMonth() + 1 })
+          .then((data) => {
+            setMonthTotal(data.total);
+            setMonthLabel(data.monthLabel);
+            setMyDue(data.residentDue ? data.residentDue.dueAmount : null);
+          })
+          .catch(() => {
+            setMonthTotal(null);
+            setMonthLabel('');
+            setMyDue(null);
+          });
+        void fetchAmenities()
+          .then((data) => {
+            setNextBooking(data.nextBooking ?? null);
+          })
+          .catch(() => {
+            setNextBooking(null);
+          });
+      } else {
+        setMonthTotal(null);
+        setMonthLabel('');
+        setMyDue(null);
+        setNextBooking(null);
+      }
       if (resident) {
         void fetchGuests()
           .then((data) => {
@@ -69,13 +80,13 @@ export default function HomeScreen() {
       } else {
         setPendingGuests([]);
       }
-    }, [resident]),
+    }, [resident, guard]),
   );
   const firstName = user?.name?.split(' ')[0] ?? 'Resident';
 
   return (
     <View style={styles.container}>
-      <View style={[styles.header, { paddingTop: insets.top + spacing.md }]}>
+      <View style={[styles.header, { paddingTop: insets.top + spacing.sm }]}>
         <View>
           <Text style={styles.welcome}>Welcome back,</Text>
           <Text style={styles.name}>{firstName}</Text>
@@ -94,19 +105,26 @@ export default function HomeScreen() {
 
       <ScrollView
         style={styles.scroll}
-        contentContainerStyle={{ paddingBottom: 120 }}
+        contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
 
       {/* Summary cards */}
+      {guard ? null : (
       <View style={styles.cardsRow}>
         <Pressable
           style={[styles.summaryCard, { backgroundColor: colors.rose }]}
           onPress={() => router.push('/expenses')}
         >
-          <Text style={styles.cardLabel}>MONTHLY EXPENSES</Text>
+          <Text style={styles.cardLabel}>{resident ? 'MY DUE' : 'MONTHLY EXPENSES'}</Text>
           <Text style={styles.cardValue}>
-            {monthTotal == null ? '—' : formatMoney(monthTotal)}
+            {resident
+              ? myDue == null
+                ? '—'
+                : formatMoney(myDue)
+              : monthTotal == null
+                ? '—'
+                : formatMoney(monthTotal)}
           </Text>
           <View style={styles.cardBadge}>
             <Text style={styles.cardBadgeText}>{monthLabel || 'This month'}</Text>
@@ -127,6 +145,7 @@ export default function HomeScreen() {
           </View>
         </Pressable>
       </View>
+      )}
 
       {/* Guest alert */}
       {pendingGuests.length > 0 && (
@@ -147,7 +166,7 @@ export default function HomeScreen() {
       )}
 
       {/* Quick actions */}
-      <View style={styles.actionsGrid}>
+      <View style={[styles.actionsGrid, guard && styles.actionsGridCentered]}>
         <ActionItem
           icon="calendar"
           label="Booking"
@@ -156,19 +175,29 @@ export default function HomeScreen() {
         <ActionItem
           icon="notifications"
           label="Notices"
-          badge={resident ? unreadCount : 0}
+          badge={unreadCount}
           onPress={() => router.push('/notices')}
         />
-        <ActionItem
-          icon="people"
-          label="Community"
-          onPress={() => router.push('/(tabs)/community')}
-        />
-        <ActionItem
-          icon="construct"
-          label="Support"
-          onPress={() => router.push('/complaints')}
-        />
+        {guard ? (
+          <ActionItem
+            icon="shield-checkmark"
+            label="Guests"
+            onPress={() => router.push('/(tabs)/guests')}
+          />
+        ) : (
+          <ActionItem
+            icon="people"
+            label="Community"
+            onPress={() => router.push('/(tabs)/community')}
+          />
+        )}
+        {guard ? null : (
+          <ActionItem
+            icon="construct"
+            label="Support"
+            onPress={() => router.push('/complaints')}
+          />
+        )}
       </View>
 
       {/* Recent notices */}
@@ -261,13 +290,13 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.border,
     zIndex: 20,
   },
-  welcome: { fontSize: 12, color: colors.textMuted, fontWeight: '500' },
-  name: { fontSize: 18, fontWeight: '700', color: colors.text },
+  welcome: { fontSize: 12, lineHeight: 14, color: colors.textMuted, fontWeight: '500' },
+  name: { fontSize: 18, lineHeight: 20, fontWeight: '700', color: colors.text },
   avatarWrap: { position: 'relative' },
   avatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     borderWidth: 1,
     borderColor: colors.slate200,
     backgroundColor: colors.slate100,
@@ -287,6 +316,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#EF4444',
     borderWidth: 2,
     borderColor: colors.white,
+  },
+  scrollContent: {
+    paddingTop: spacing.md,
+    paddingBottom: 120,
   },
   cardsRow: {
     paddingHorizontal: spacing.lg,
@@ -369,6 +402,10 @@ const styles = StyleSheet.create({
     marginTop: spacing.lg,
     flexDirection: 'row',
     justifyContent: 'space-between',
+  },
+  actionsGridCentered: {
+    justifyContent: 'center',
+    gap: 28,
   },
   actionItem: { width: '22%', alignItems: 'center', gap: 6 },
   actionBtn: {

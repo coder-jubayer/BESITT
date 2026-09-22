@@ -89,6 +89,44 @@ async function loadElectionForActor(
   return election;
 }
 
+/**
+ * Once voting closes the result is announced regardless of `showResults`; that flag only
+ * governs whether the vote counts themselves are visible while the race is live.
+ */
+async function computeWinner(
+  req: AuthRequest,
+  electionId: string,
+  showCounts: boolean,
+  totalVotes: number,
+) {
+  const counts = await ElectionVote.aggregate<{ _id: string; count: number }>([
+    { $match: { electionId } },
+    { $group: { _id: '$candidateId', count: { $sum: 1 } } },
+    { $sort: { count: -1 } },
+  ]);
+
+  if (counts.length === 0) return null;
+
+  const topCount = counts[0].count;
+  if (topCount === 0) return null;
+
+  const topIds = counts.filter((item) => item.count === topCount).map((item) => item._id);
+  const topCandidates = await ElectionCandidate.find({ _id: { $in: topIds } });
+  if (topCandidates.length === 0) return null;
+
+  const [first] = topCandidates;
+  return {
+    candidateId: first._id.toString(),
+    name: first.name,
+    unitNumber: first.unitNumber,
+    image: publicFileUrl(req, first.image),
+    votes: showCounts ? topCount : undefined,
+    percent: showCounts && totalVotes > 0 ? Math.round((topCount / totalVotes) * 100) : undefined,
+    tied: topCandidates.length > 1,
+    tiedNames: topCandidates.length > 1 ? topCandidates.map((c) => c.name) : undefined,
+  };
+}
+
 async function electionDto(
   req: AuthRequest,
   election: InstanceType<typeof Election>,
@@ -100,9 +138,12 @@ async function electionDto(
   const myVote = await ElectionVote.findOne({ electionId: election._id.toString(), userId: actor.userId });
   const candidateCount = await ElectionCandidate.countDocuments({ electionId: election._id.toString() });
   const showCounts = election.showResults || manage;
-  const totalVotes = showCounts
-    ? await ElectionVote.countDocuments({ electionId: election._id.toString() })
-    : undefined;
+  const voteTotal = await ElectionVote.countDocuments({ electionId: election._id.toString() });
+  const totalVotes = showCounts ? voteTotal : undefined;
+  const winner =
+    status === 'closed'
+      ? await computeWinner(req, election._id.toString(), showCounts, voteTotal)
+      : null;
 
   const base = {
     ...election.toSafeJSON(),
@@ -117,6 +158,7 @@ async function electionDto(
     hasVoted: Boolean(myVote),
     myCandidateId: myVote?.candidateId,
     resultsVisible: showCounts,
+    winner,
   };
 
   if (!includeCandidates) return { election: base };

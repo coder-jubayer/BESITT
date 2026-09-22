@@ -21,6 +21,8 @@ function normalizeWhatsApp(raw: string): string {
 
 router.get('/settings', requireAuth, async (_req: AuthRequest, res: Response, next: NextFunction) => {
   try {
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
+    res.set('Pragma', 'no-cache');
     const settings = await getPlatformSettings();
     res.json({
       success: true,
@@ -62,6 +64,7 @@ router.patch(
           throw new AppError(400, 'Choose a valid free trial length');
         }
         settings.freeTrialDays = days;
+        settings.markModified('freeTrialDays');
       }
 
       if (req.body.supportWhatsApp !== undefined) {

@@ -1,9 +1,13 @@
 import { apiClient, getAuthToken } from './api.client';
-import type { ApiResponse, LoginResponse, User } from '../types';
+import type { ApiResponse, Building, LoginResponse, User } from '../types';
 
-export async function loginRequest(email: string, password: string): Promise<LoginResponse> {
+export async function loginRequest(identifier: string, password: string): Promise<LoginResponse> {
+  const trimmed = identifier.trim();
   const { data } = await apiClient.post<ApiResponse<LoginResponse>>('/auth/login', {
-    email,
+    identifier: trimmed,
+    // Keep email for older API builds that only read this field.
+    email: trimmed.includes('@') ? trimmed.toLowerCase() : undefined,
+    phone: trimmed.includes('@') ? undefined : trimmed,
     password,
   });
 
@@ -12,6 +16,38 @@ export async function loginRequest(email: string, password: string): Promise<Log
   }
 
   return data.data;
+}
+
+export async function signupResident(payload: {
+  buildingCode: string;
+  name: string;
+  unitNumber: string;
+  phone: string;
+  password: string;
+  email?: string;
+}): Promise<LoginResponse> {
+  const { data } = await apiClient.post<ApiResponse<LoginResponse>>(
+    '/auth/signup/resident',
+    payload,
+  );
+
+  if (!data.success || !data.data) {
+    throw new Error(data.message ?? 'Signup failed');
+  }
+
+  return data.data;
+}
+
+export async function lookupBuildingCode(code: string): Promise<Building> {
+  const { data } = await apiClient.get<ApiResponse<{ building: Building }>>(
+    `/auth/building-code/${encodeURIComponent(code)}`,
+  );
+
+  if (!data.success || !data.data?.building) {
+    throw new Error(data.message ?? 'No building found for that code');
+  }
+
+  return data.data.building;
 }
 
 export async function signupBuildingAdmin(payload: {

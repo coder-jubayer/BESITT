@@ -8,6 +8,8 @@ import {
   TextStyle,
 } from 'react-native';
 import { colors, borderRadius, typography, spacing } from '../../theme';
+import { useAuthStore } from '../../stores/auth.store';
+import { requestActivationPopup } from '../../utils/buildingLock';
 
 type ButtonVariant = 'primary' | 'secondary' | 'outline' | 'ghost' | 'danger';
 type ButtonSize = 'sm' | 'md' | 'lg';
@@ -18,6 +20,8 @@ interface ButtonProps extends TouchableOpacityProps {
   size?: ButtonSize;
   loading?: boolean;
   fullWidth?: boolean;
+  /** When true, skip building-lock popup gate (e.g. Start trial). */
+  bypassBuildingLock?: boolean;
 }
 
 export function Button({
@@ -28,6 +32,8 @@ export function Button({
   fullWidth = false,
   disabled,
   style,
+  onPress,
+  bypassBuildingLock = false,
   ...props
 }: ButtonProps) {
   const isDisabled = disabled || loading;
@@ -45,13 +51,23 @@ export function Button({
       disabled={isDisabled}
       activeOpacity={0.8}
       {...props}
+      onPress={(event) => {
+        if (!bypassBuildingLock) {
+          const access = useAuthStore.getState().user?.buildingAccess;
+          if (access && !access.canWrite) {
+            requestActivationPopup();
+            return;
+          }
+        }
+        onPress?.(event);
+      }}
     >
       {loading ? (
         <ActivityIndicator
           color={variant === 'outline' || variant === 'ghost' ? colors.text : colors.white}
         />
       ) : (
-        <Text style={[styles.text, styles[`text_${variant}`], styles[`textSize_${size}`]]}>
+        <Text style={[styles.text, styles[`text_${variant}`], styles[`textSize_${size}`] as TextStyle]}>
           {title}
         </Text>
       )}

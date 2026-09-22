@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import {
   View,
   Text,
+  Image,
   StyleSheet,
   KeyboardAvoidingView,
   Platform,
@@ -12,13 +13,13 @@ import { Redirect, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Button, Input, Card } from '../../src/components/ui';
 import { useAuthStore } from '../../src/stores/auth.store';
-import { colors, spacing, typography } from '../../src/theme';
+import { colors, spacing, typography, borderRadius } from '../../src/theme';
 
 export default function LoginScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { login, isAuthenticated, isLoading, isHydrated } = useAuthStore();
-  const [email, setEmail] = useState('');
+  const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
 
@@ -33,14 +34,14 @@ export default function LoginScreen() {
   }
 
   const handleLogin = async () => {
-    if (!email.trim() || !password) {
-      setError('Enter email and password.');
+    if (!identifier.trim() || !password) {
+      setError('Enter your email or phone and password.');
       return;
     }
 
     setError(null);
     try {
-      await login(email.trim(), password);
+      await login(identifier.trim(), password);
       router.replace('/(tabs)/home');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed');
@@ -60,21 +61,22 @@ export default function LoginScreen() {
         keyboardShouldPersistTaps="handled"
       >
         <View style={styles.logoContainer}>
-          <View style={styles.logo}>
-            <Text style={styles.logoText}>BG</Text>
-          </View>
-          <Text style={styles.appName}>Barighorr</Text>
+          <Image
+            source={require('../../assets/logo.png')}
+            style={styles.logo}
+            accessibilityLabel="Barighorr"
+          />
           <Text style={styles.tagline}>Sign in to continue</Text>
         </View>
 
         <Card>
           <View style={styles.form}>
             <Input
-              label="Email"
-              placeholder="you@email.com"
-              value={email}
+              label="Email or phone"
+              placeholder="Enter email or phone"
+              value={identifier}
               onChangeText={(value) => {
-                setEmail(value);
+                setIdentifier(value);
                 setError(null);
               }}
               keyboardType="email-address"
@@ -98,9 +100,10 @@ export default function LoginScreen() {
 
         <Pressable onPress={() => router.push('/(auth)/signup')}>
           <Text style={styles.switchText}>
-            Building admin? <Text style={styles.switchLink}>Create an account</Text>
+            New here? <Text style={styles.switchLink}>Create an account</Text>
           </Text>
         </Pressable>
+        <Text style={styles.signupHint}>Resident with a building code, or register as building admin</Text>
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -114,17 +117,12 @@ const styles = StyleSheet.create({
     gap: spacing.lg,
     justifyContent: 'center',
   },
-  logoContainer: { alignItems: 'center', gap: spacing.sm, marginBottom: spacing.md },
+  logoContainer: { alignItems: 'center', gap: spacing.md, marginBottom: spacing.md },
   logo: {
-    width: 72,
-    height: 72,
-    borderRadius: 20,
-    backgroundColor: colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
+    width: 112,
+    height: 112,
+    borderRadius: borderRadius.xl,
   },
-  logoText: { fontSize: 28, fontWeight: '800', color: colors.white },
-  appName: { ...typography.h2, color: colors.text },
   tagline: { ...typography.bodySmall, color: colors.textSecondary },
   form: { gap: spacing.md },
   error: { color: colors.error, fontSize: 13, textAlign: 'center' },
@@ -134,4 +132,10 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   switchLink: { color: colors.primary, fontWeight: '700' },
+  signupHint: {
+    ...typography.bodySmall,
+    color: colors.textMuted,
+    textAlign: 'center',
+    marginTop: -spacing.sm,
+  },
 });

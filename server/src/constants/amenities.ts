@@ -4,6 +4,7 @@ export const AMENITY_IDS = [
   'community_hall',
   'table_tennis',
   'billiard_room',
+  'rooftop',
 ] as const;
 
 export type AmenityId = (typeof AMENITY_IDS)[number];
@@ -66,6 +67,16 @@ export const AMENITIES: AmenityDefinition[] = [
     icon: 'ellipse',
     color: '#6366F1',
     openHour: 10,
+    closeHour: 22,
+    slotMinutes: 60,
+    capacity: 1,
+  },
+  {
+    id: 'rooftop',
+    name: 'Rooftop',
+    icon: 'sunny',
+    color: '#14B8A6',
+    openHour: 8,
     closeHour: 22,
     slotMinutes: 60,
     capacity: 1,

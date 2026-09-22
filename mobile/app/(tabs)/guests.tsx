@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useState } from 'react';
 import {
   View,
   Text,
@@ -6,34 +6,27 @@ import {
   Pressable,
   StyleSheet,
   RefreshControl,
-  Modal,
-  KeyboardAvoidingView,
-  Platform,
   ActivityIndicator,
   Linking,
 } from 'react-native';
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PageHeader } from '../../src/components/PageHeader';
-import { PopupHeader } from '../../src/components/PopupHeader';
-import { Button, Input } from '../../src/components/ui';
 import { colors, spacing, borderRadius, shadows } from '../../src/theme';
 import { useAuthStore } from '../../src/stores/auth.store';
-import { createGuestVisit, decideGuestVisit, fetchGuests } from '../../src/services/guests.service';
+import { decideGuestVisit, fetchGuests } from '../../src/services/guests.service';
 import { formatRelativeTime } from '../../src/utils/date';
 import { useGuestsStore } from '../../src/stores/guests.store';
 import {
   Building,
-  GuestHost,
   GuestVisit,
   canCreateGuestVisits,
   isAppAdmin,
 } from '../../src/types';
 
-const FALLBACK_PURPOSES = ['Guest', 'Delivery', 'Family', 'Cab / Ride', 'Maintenance', 'Other'];
-
 export default function GuestsScreen() {
+  const router = useRouter();
   const insets = useSafeAreaInsets();
   const user = useAuthStore((s) => s.user);
   const creator = canCreateGuestVisits(user?.role);
@@ -41,8 +34,6 @@ export default function GuestsScreen() {
 
   const [tab, setTab] = useState<'pending' | 'history'>('pending');
   const [visits, setVisits] = useState<GuestVisit[]>([]);
-  const [residents, setResidents] = useState<GuestHost[]>([]);
-  const [purposes, setPurposes] = useState<string[]>(FALLBACK_PURPOSES);
   const [buildings, setBuildings] = useState<Building[]>([]);
   const [buildingId, setBuildingId] = useState('');
   const [canCreate, setCanCreate] = useState(creator);
@@ -51,16 +42,6 @@ export default function GuestsScreen() {
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
-
-  const [createOpen, setCreateOpen] = useState(false);
-  const [creating, setCreating] = useState(false);
-  const [visitorName, setVisitorName] = useState('');
-  const [visitorPhone, setVisitorPhone] = useState('');
-  const [purpose, setPurpose] = useState('Guest');
-  const [customPurpose, setCustomPurpose] = useState('');
-  const [residentId, setResidentId] = useState('');
-  const [residentQuery, setResidentQuery] = useState('');
-  const [formError, setFormError] = useState<string | null>(null);
 
   const pending = visits.filter((item) => item.status === 'pending');
   const history = visits.filter((item) => item.status !== 'pending');
@@ -75,8 +56,6 @@ export default function GuestsScreen() {
     try {
       const data = await fetchGuests(appAdmin ? buildingId || undefined : undefined);
       setVisits(data.visits);
-      setResidents(data.residents ?? []);
-      setPurposes(data.purposes?.length ? data.purposes : FALLBACK_PURPOSES);
       setCanCreate(data.canCreate);
       setBuildings(data.buildings ?? []);
       setBuildingId((current) => current || data.buildingId || data.buildings?.[0]?.id || '');
@@ -94,72 +73,6 @@ export default function GuestsScreen() {
       void loadGuests();
     }, [loadGuests]),
   );
-
-  const resetForm = () => {
-    setVisitorName('');
-    setVisitorPhone('');
-    setPurpose('Guest');
-    setCustomPurpose('');
-    setResidentId('');
-    setResidentQuery('');
-    setFormError(null);
-  };
-
-  const selectedResident = residents.find((item) => item.id === residentId);
-  const filteredResidents = useMemo(() => {
-    const query = residentQuery.trim().toLowerCase();
-    if (!query) return residents;
-    return residents.filter((item) => {
-      const haystack = `${item.name} ${item.unitNumber ?? ''}`.toLowerCase();
-      return haystack.includes(query);
-    });
-  }, [residentQuery, residents]);
-
-  const handleCreate = async () => {
-    const name = visitorName.trim();
-    const phone = visitorPhone.trim();
-    const reason = purpose === 'Other' ? customPurpose.trim() : purpose;
-    if (name.length < 2) {
-      setFormError('Enter the visitor name.');
-      return;
-    }
-    if (phone.replace(/\D/g, '').length < 3) {
-      setFormError('Enter a valid phone number.');
-      return;
-    }
-    if (reason.length < 2) {
-      setFormError('Enter the visit purpose.');
-      return;
-    }
-    if (!residentId) {
-      setFormError('Select the resident to notify.');
-      return;
-    }
-    if (appAdmin && !buildingId) {
-      setFormError('Select a building.');
-      return;
-    }
-
-    setCreating(true);
-    setFormError(null);
-    try {
-      await createGuestVisit({
-        name,
-        phone,
-        purpose: reason,
-        residentId,
-        buildingId: appAdmin ? buildingId : undefined,
-      });
-      setCreateOpen(false);
-      resetForm();
-      await loadGuests();
-      showToast(`Request sent to ${selectedResident?.name ?? 'resident'}`);
-    } catch (err) {
-      setFormError(err instanceof Error ? err.message : 'Failed to send request');
-    } finally {
-      setCreating(false);
-    }
-  };
 
   const handleDecide = async (visit: GuestVisit, status: 'approved' | 'denied') => {
     setBusyId(visit.id);
@@ -332,10 +245,12 @@ export default function GuestsScreen() {
       {canCreate ? (
         <Pressable
           style={[styles.fab, { bottom: insets.bottom + 88 }]}
-          onPress={() => {
-            resetForm();
-            setCreateOpen(true);
-          }}
+          onPress={() =>
+            router.push({
+              pathname: '/add-visitor',
+              params: buildingId ? { buildingId } : {},
+            } as never)
+          }
         >
           <Ionicons name="add" size={28} color={colors.white} />
         </Pressable>
@@ -346,112 +261,6 @@ export default function GuestsScreen() {
           <Text style={styles.toastText}>{toast}</Text>
         </View>
       ) : null}
-
-      <Modal
-        visible={createOpen}
-        animationType="fade"
-        transparent
-        statusBarTranslucent
-        onRequestClose={() => setCreateOpen(false)}
-      >
-        <View style={styles.modalRoot}>
-          <Pressable style={StyleSheet.absoluteFill} onPress={() => setCreateOpen(false)} />
-          <KeyboardAvoidingView
-            style={styles.modalWrap}
-            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-            pointerEvents="box-none"
-          >
-            <View style={[styles.sheet, { paddingBottom: insets.bottom + spacing.lg }]}>
-              <View style={styles.sheetHandle} />
-              <PopupHeader title="Add visitor" onClose={() => setCreateOpen(false)} />
-              <Text style={styles.sheetSubtitle}>Send an approval request to the resident.</Text>
-              <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.form}>
-              <Text style={styles.fieldLabel}>Host resident</Text>
-              <Input
-                placeholder="Search name or unit"
-                value={residentQuery}
-                onChangeText={setResidentQuery}
-              />
-              <ScrollView
-                nestedScrollEnabled
-                style={styles.residentList}
-                contentContainerStyle={{ gap: 8 }}
-                keyboardShouldPersistTaps="handled"
-              >
-                {filteredResidents.length ? (
-                  filteredResidents.map((resident) => {
-                    const active = resident.id === residentId;
-                    return (
-                      <Pressable
-                        key={resident.id}
-                        onPress={() => setResidentId(resident.id)}
-                        style={[styles.residentRow, active && styles.residentRowActive]}
-                      >
-                        <View style={styles.residentAvatar}>
-                          <Text style={styles.residentInitial}>
-                            {(resident.name || 'R').trim().charAt(0).toUpperCase()}
-                          </Text>
-                        </View>
-                        <View style={{ flex: 1 }}>
-                          <Text style={styles.residentName}>{resident.name}</Text>
-                          <Text style={styles.residentMeta}>
-                            {resident.unitNumber ? `Apt ${resident.unitNumber}` : 'No unit'}
-                          </Text>
-                        </View>
-                        {active ? <Ionicons name="checkmark-circle" size={20} color={colors.primary} /> : null}
-                      </Pressable>
-                    );
-                  })
-                ) : (
-                  <Text style={styles.muted}>No residents found.</Text>
-                )}
-              </ScrollView>
-
-              <Input
-                label="Visitor name"
-                value={visitorName}
-                onChangeText={setVisitorName}
-                placeholder="Full name"
-              />
-              <Input
-                label="Phone number"
-                value={visitorPhone}
-                onChangeText={setVisitorPhone}
-                placeholder="01XXXXXXXXX"
-                keyboardType="phone-pad"
-              />
-
-              <Text style={styles.fieldLabel}>Purpose</Text>
-              <View style={styles.purposeRow}>
-                {purposes.map((item) => {
-                  const active = purpose === item;
-                  return (
-                    <Pressable
-                      key={item}
-                      onPress={() => setPurpose(item)}
-                      style={[styles.purposeChip, active && styles.purposeChipActive]}
-                    >
-                      <Text style={[styles.purposeText, active && styles.purposeTextActive]}>{item}</Text>
-                    </Pressable>
-                  );
-                })}
-              </View>
-              {purpose === 'Other' ? (
-                <Input
-                  value={customPurpose}
-                  onChangeText={setCustomPurpose}
-                  placeholder="Describe the purpose"
-                />
-              ) : null}
-
-              {formError ? <Text style={styles.error}>{formError}</Text> : null}
-              <Button title="Send request" loading={creating} onPress={() => void handleCreate()} />
-              <Button title="Cancel" variant="outline" onPress={() => setCreateOpen(false)} />
-            </ScrollView>
-          </View>
-          </KeyboardAvoidingView>
-        </View>
-      </Modal>
     </View>
   );
 }
@@ -544,7 +353,6 @@ const styles = StyleSheet.create({
     ...shadows.fab,
   },
   error: { color: colors.error, fontSize: 13, textAlign: 'center' },
-  muted: { color: colors.textSecondary, textAlign: 'center', paddingVertical: 8 },
   toast: {
     position: 'absolute',
     left: spacing.md,
@@ -555,62 +363,4 @@ const styles = StyleSheet.create({
     ...shadows.md,
   },
   toastText: { color: colors.white, textAlign: 'center', fontWeight: '600' },
-  modalRoot: {
-    flex: 1,
-    justifyContent: 'flex-end',
-    backgroundColor: 'rgba(0, 0, 0, 0.55)',
-  },
-  modalWrap: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'transparent' },
-  sheet: {
-    backgroundColor: colors.surface,
-    borderTopLeftRadius: borderRadius.xl,
-    borderTopRightRadius: borderRadius.xl,
-    padding: spacing.lg,
-    maxHeight: '92%',
-  },
-  sheetHandle: {
-    alignSelf: 'center',
-    width: 40,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: colors.border,
-    marginBottom: spacing.md,
-  },
-  sheetTitle: { fontSize: 18, fontWeight: '700', color: colors.text },
-  sheetSubtitle: { fontSize: 13, color: colors.textSecondary, marginBottom: spacing.md },
-  form: { gap: spacing.md, paddingBottom: spacing.lg },
-  fieldLabel: { fontSize: 12, fontWeight: '600', color: colors.textSecondary },
-  residentList: { maxHeight: 180 },
-  residentRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    padding: 10,
-    borderRadius: borderRadius.lg,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.background,
-  },
-  residentRowActive: { borderColor: colors.primary, backgroundColor: colors.primaryLight },
-  residentAvatar: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: colors.primaryLight,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  residentInitial: { fontWeight: '800', color: colors.primary },
-  residentName: { fontWeight: '700', color: colors.text },
-  residentMeta: { fontSize: 12, color: colors.textSecondary, marginTop: 1 },
-  purposeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  purposeChip: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: borderRadius.full,
-    backgroundColor: colors.slate100,
-  },
-  purposeChipActive: { backgroundColor: colors.primary },
-  purposeText: { fontWeight: '600', fontSize: 13, color: colors.text },
-  purposeTextActive: { color: colors.white },
 });

@@ -8,19 +8,14 @@
     "scheme": "barighorr",
     "userInterfaceStyle": "light",
     "backgroundColor": "#FFFFFF",
-    "androidStatusBar": {
-      "barStyle": "dark-content",
-      "backgroundColor": "#FFFFFF"
-    },
     "androidNavigationBar": {
-      "barStyle": "dark-content",
-      "backgroundColor": "#FFFFFF"
+      "barStyle": "dark-content"
     },
     "newArchEnabled": true,
     "splash": {
-      "image": "./assets/icon.png",
+      "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#FFFFFF"
+      "backgroundColor": "#000000"
     },
     "ios": {
       "supportsTablet": true,
@@ -35,10 +30,13 @@
       "package": "com.barighorr.app",
       "versionCode": 1,
       "usesCleartextTraffic": true,
-      "permissions": ["INTERNET", "ACCESS_NETWORK_STATE"],
+      "permissions": [
+        "INTERNET",
+        "ACCESS_NETWORK_STATE"
+      ],
       "backgroundColor": "#FFFFFF",
       "adaptiveIcon": {
-        "backgroundColor": "#1E40AF",
+        "backgroundColor": "#000000",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
@@ -62,6 +60,13 @@
       "expo-video",
       "expo-status-bar",
       [
+        "expo-notifications",
+        {
+          "color": "#1E40AF",
+          "defaultChannel": "default"
+        }
+      ],
+      [
         "expo-build-properties",
         {
           "android": {
@@ -69,7 +74,8 @@
           }
         }
       ],
-      "./plugins/withCleartextTraffic.js"
+      "./plugins/withCleartextTraffic.js",
+      "expo-sharing"
     ],
     "experiments": {
       "typedRoutes": false

@@ -719,7 +719,7 @@ const styles = StyleSheet.create({
     ...shadows.md,
   },
   raiseText: { color: colors.white, fontWeight: '600' },
-  list: { paddingHorizontal: spacing.md, gap: 12, paddingBottom: 40 },
+  list: { paddingHorizontal: spacing.md, paddingTop: spacing.md, gap: 12, paddingBottom: 40 },
   chipRow: { gap: 8, paddingBottom: 4 },
   filterChip: {
     paddingHorizontal: 12,

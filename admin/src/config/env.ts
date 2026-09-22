@@ -1,0 +1,67 @@
+import { Platform } from 'react-native';
+import Constants from 'expo-constants';
+
+const API_PORT = 3001;
+
+function lanHostFromUri(value?: string): string | null {
+  if (!value) return null;
+  const host = value.split(':')[0];
+  if (!host || host === 'localhost' || host === '127.0.0.1') return null;
+  return host;
+}
+
+function resolveDevApiUrl(): string {
+  const expoAny = Constants as {
+    expoConfig?: { hostUri?: string; extra?: { apiUrl?: string } };
+    manifest2?: { extra?: { expoGo?: { debuggerHost?: string } } };
+    manifest?: { debuggerHost?: string };
+  };
+
+  const metroHost = lanHostFromUri(
+    expoAny.expoConfig?.hostUri ??
+      expoAny.manifest2?.extra?.expoGo?.debuggerHost ??
+      expoAny.manifest?.debuggerHost,
+  );
+  if (metroHost) {
+    return `http://${metroHost}:${API_PORT}/api/v1`;
+  }
+
+  const fromEnv = process.env.EXPO_PUBLIC_API_URL;
+  if (fromEnv && !fromEnv.includes('localhost') && !fromEnv.includes('127.0.0.1')) {
+    return fromEnv;
+  }
+
+  const extraUrl = expoAny.expoConfig?.extra?.apiUrl;
+  if (extraUrl && !extraUrl.includes('localhost') && !extraUrl.includes('127.0.0.1')) {
+    return extraUrl;
+  }
+
+  if (Platform.OS === 'android') {
+    return `http://10.0.2.2:${API_PORT}/api/v1`;
+  }
+
+  return `http://localhost:${API_PORT}/api/v1`;
+}
+
+function resolveApiUrl(): string {
+  const extraUrl = (Constants as { expoConfig?: { extra?: { apiUrl?: string } } }).expoConfig
+    ?.extra?.apiUrl;
+  const fromEnv = process.env.EXPO_PUBLIC_API_URL;
+
+  if (!__DEV__) {
+    if (fromEnv && !fromEnv.includes('localhost') && !fromEnv.includes('127.0.0.1')) {
+      return fromEnv;
+    }
+    if (extraUrl && !extraUrl.includes('localhost') && !extraUrl.includes('127.0.0.1')) {
+      return extraUrl;
+    }
+  }
+
+  return resolveDevApiUrl();
+}
+
+export const config = {
+  apiUrl: resolveApiUrl(),
+  appName: 'Barighorr Admin',
+  appVersion: Constants.expoConfig?.version ?? '1.0.0',
+} as const;

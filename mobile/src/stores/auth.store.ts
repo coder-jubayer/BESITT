@@ -1,7 +1,12 @@
 import * as SecureStore from 'expo-secure-store';
 import { create } from 'zustand';
 import { setAuthToken } from '../services/api.client';
-import { loginRequest, fetchMe, signupBuildingAdmin } from '../services/auth.service';
+import {
+  loginRequest,
+  fetchMe,
+  signupBuildingAdmin,
+  signupResident,
+} from '../services/auth.service';
 import { unregisterPushToken } from '../services/push.service';
 import type { User } from '../types';
 import { useGuestsStore } from './guests.store';
@@ -15,13 +20,21 @@ interface AuthStore {
   isLoading: boolean;
   isHydrated: boolean;
   hydrate: () => Promise<void>;
-  login: (email: string, password: string) => Promise<void>;
+  login: (identifier: string, password: string) => Promise<void>;
   signup: (payload: {
     name: string;
     email: string;
     password: string;
     buildingName: string;
     phone?: string;
+  }) => Promise<void>;
+  signupAsResident: (payload: {
+    buildingCode: string;
+    name: string;
+    unitNumber: string;
+    phone: string;
+    password: string;
+    email?: string;
   }) => Promise<void>;
   logout: () => Promise<void>;
   setUser: (user: User) => void;
@@ -68,10 +81,10 @@ export const useAuthStore = create<AuthStore>((set) => ({
     }
   },
 
-  login: async (email: string, password: string) => {
+  login: async (identifier: string, password: string) => {
     set({ isLoading: true });
     try {
-      const { token, user } = await loginRequest(email, password);
+      const { token, user } = await loginRequest(identifier, password);
       set(await persistSession(token, user));
     } catch (error) {
       set({ isLoading: false });
@@ -83,6 +96,17 @@ export const useAuthStore = create<AuthStore>((set) => ({
     set({ isLoading: true });
     try {
       const { token, user } = await signupBuildingAdmin(payload);
+      set(await persistSession(token, user));
+    } catch (error) {
+      set({ isLoading: false });
+      throw error;
+    }
+  },
+
+  signupAsResident: async (payload) => {
+    set({ isLoading: true });
+    try {
+      const { token, user } = await signupResident(payload);
       set(await persistSession(token, user));
     } catch (error) {
       set({ isLoading: false });

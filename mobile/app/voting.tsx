@@ -102,9 +102,43 @@ function initials(name: string) {
 
 const STATUS_STYLE: Record<ElectionStatus, { bg: string; fg: string; label: string }> = {
   upcoming: { bg: colors.warningLight, fg: colors.warning, label: 'Upcoming' },
-  open: { bg: colors.emeraldLight, fg: '#065F46', label: 'Open' },
-  closed: { bg: colors.slate100, fg: colors.textSecondary, label: 'Closed' },
+  open: { bg: colors.emeraldLight, fg: '#065F46', label: 'Running' },
+  closed: { bg: colors.slate100, fg: colors.textSecondary, label: 'Ended' },
 };
+
+function WinnerRow({ election }: { election: ElectionSummary }) {
+  const winner = election.winner;
+
+  if (!winner) {
+    return <Text style={styles.endedNote}>Ended · no votes were cast</Text>;
+  }
+
+  const names = winner.tied ? (winner.tiedNames ?? [winner.name]).join(' · ') : winner.name;
+
+  return (
+    <View style={styles.winnerRow}>
+      {winner.image && !winner.tied ? (
+        <Image source={{ uri: winner.image }} style={styles.winnerAvatar} contentFit="cover" />
+      ) : (
+        <View style={styles.winnerFallback}>
+          <Ionicons name="trophy" size={18} color={colors.warning} />
+        </View>
+      )}
+      <View style={{ flex: 1 }}>
+        <Text style={styles.winnerLabel}>{winner.tied ? 'TIED' : 'WINNER'}</Text>
+        <Text style={styles.winnerName} numberOfLines={2}>
+          {names}
+        </Text>
+      </View>
+      {typeof winner.votes === 'number' ? (
+        <Text style={styles.winnerVotes}>
+          {winner.votes} vote{winner.votes === 1 ? '' : 's'}
+          {typeof winner.percent === 'number' ? ` · ${winner.percent}%` : ''}
+        </Text>
+      ) : null}
+    </View>
+  );
+}
 
 export default function VotingScreen() {
   const router = useRouter();
@@ -459,6 +493,12 @@ export default function VotingScreen() {
             </Text>
           </View>
 
+          {selected.status === 'closed' ? (
+            <View style={styles.winnerBanner}>
+              <WinnerRow election={selected} />
+            </View>
+          ) : null}
+
           {selected.canManage ? (
             <View style={styles.manageRow}>
               <Pressable style={styles.manageBtn} onPress={openEdit}>
@@ -779,11 +819,20 @@ export default function VotingScreen() {
               </View>
               <Text style={styles.listMeta}>{election.position} · {election.candidateCount} candidate{election.candidateCount === 1 ? '' : 's'}</Text>
               <Text style={styles.listPeriod}>{election.periodLabel}</Text>
-              {election.hasVoted ? (
-                <Text style={styles.votedHint}>
-                  {election.status === 'open' ? 'You voted · you can cancel and change it' : 'You voted'}
-                </Text>
-              ) : null}
+              {election.status === 'closed' ? (
+                <WinnerRow election={election} />
+              ) : election.status === 'open' ? (
+                <View style={styles.runningRow}>
+                  <View style={styles.liveDot} />
+                  <Text style={styles.runningText}>
+                    {election.hasVoted
+                      ? 'Voting running · you voted, tap to change'
+                      : 'Voting running · tap to vote'}
+                  </Text>
+                </View>
+              ) : (
+                <Text style={styles.upcomingText}>Voting has not started yet</Text>
+              )}
             </Pressable>
           );
         })}
@@ -838,6 +887,33 @@ const styles = StyleSheet.create({
   listMeta: { marginTop: 6, color: colors.textSecondary, fontSize: 13 },
   listPeriod: { marginTop: 2, color: colors.success, fontSize: 13, fontWeight: '600' },
   votedHint: { marginTop: 8, color: colors.primaryDark, fontWeight: '700', fontSize: 12 },
+  runningRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 10 },
+  liveDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.success },
+  runningText: { color: colors.success, fontWeight: '700', fontSize: 12 },
+  upcomingText: { marginTop: 10, color: colors.textMuted, fontWeight: '600', fontSize: 12 },
+  endedNote: { marginTop: 10, color: colors.textMuted, fontWeight: '600', fontSize: 12 },
+  winnerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginTop: 10,
+    padding: spacing.sm,
+    borderRadius: borderRadius.lg,
+    backgroundColor: colors.warningLight,
+  },
+  winnerAvatar: { width: 36, height: 36, borderRadius: 18 },
+  winnerFallback: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surface,
+  },
+  winnerLabel: { fontSize: 10, fontWeight: '800', color: colors.warning, letterSpacing: 0.5 },
+  winnerName: { fontWeight: '700', color: colors.text, fontSize: 14 },
+  winnerVotes: { fontSize: 11, fontWeight: '700', color: colors.textSecondary },
+  winnerBanner: { marginTop: -4 },
   banner: {
     backgroundColor: colors.emeraldLight,
     borderWidth: 1,

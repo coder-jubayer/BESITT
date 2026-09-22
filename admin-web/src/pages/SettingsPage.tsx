@@ -128,7 +128,7 @@ export function SettingsPage() {
               </div>
               <div className="chips">
                 {options.map((opt) => {
-                  const selected = settings.freeTrialDays === opt.value;
+                  const selected = Number(settings.freeTrialDays) === Number(opt.value);
                   return (
                     <button
                       key={opt.value}
@@ -136,13 +136,24 @@ export function SettingsPage() {
                       className={`chip ${selected ? 'active' : ''}`}
                       disabled={saving}
                       onClick={() => {
-                        if (!selected) void persist({ freeTrialDays: opt.value });
+                        if (!selected) void persist({ freeTrialDays: Number(opt.value) });
                       }}
                     >
                       {opt.label}
                     </button>
                   );
                 })}
+              </div>
+              <div className="muted" style={{ fontSize: 13 }}>
+                Currently saved for new claims:{' '}
+                <strong>
+                  {Number(settings.freeTrialDays) === 30
+                    ? '1 month'
+                    : Number(settings.freeTrialDays) === 60
+                      ? '2 months'
+                      : `${Number(settings.freeTrialDays)} days`}
+                </strong>
+                . Buildings already on a trial keep their original length.
               </div>
             </div>
 

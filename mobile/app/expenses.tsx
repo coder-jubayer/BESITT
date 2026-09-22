@@ -19,7 +19,14 @@ import { PopupHeader } from '../src/components/PopupHeader';
 import { Button, Input } from '../src/components/ui';
 import { colors, spacing, borderRadius, shadows } from '../src/theme';
 import { useAuthStore } from '../src/stores/auth.store';
-import { createExpense, createExpenseCategory, deleteExpense, fetchExpenses } from '../src/services/expenses.service';
+import {
+  createExpense,
+  createExpenseCategory,
+  deleteExpense,
+  downloadExpenseReport,
+  fetchExpenses,
+  setResidentDue as saveResidentDue,
+} from '../src/services/expenses.service';
 import { formatMoney } from '../src/utils/money';
 import {
   Building,
@@ -27,8 +34,11 @@ import {
   ExpenseCategory,
   ExpenseCategoryOption,
   ExpenseItem,
+  MyResidentDue,
+  ResidentDueSummary,
   canManageExpenses,
   isAppAdmin,
+  isResident,
 } from '../src/types';
 
 const now = new Date();
@@ -56,6 +66,7 @@ export default function ExpensesScreen() {
   const user = useAuthStore((s) => s.user);
   const manager = canManageExpenses(user?.role);
   const appAdmin = isAppAdmin(user?.role);
+  const resident = isResident(user?.role);
 
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
@@ -86,6 +97,19 @@ export default function ExpensesScreen() {
   const [newCategoryColor, setNewCategoryColor] = useState(CATEGORY_COLORS[0]);
   const [categoryFormError, setCategoryFormError] = useState<string | null>(null);
 
+  const [myDue, setMyDue] = useState<MyResidentDue | null>(null);
+  const [canManageDues, setCanManageDues] = useState(false);
+  const [dueSummary, setDueSummary] = useState<ResidentDueSummary | null>(null);
+  const [dueAmountOpen, setDueAmountOpen] = useState(false);
+  const [dueAmountInput, setDueAmountInput] = useState('');
+  const [dueNote, setDueNote] = useState('');
+  const [savingDue, setSavingDue] = useState(false);
+  const [dueFormError, setDueFormError] = useState<string | null>(null);
+  const [reportOpen, setReportOpen] = useState(false);
+  const [reportResidents, setReportResidents] = useState(true);
+  const [downloading, setDownloading] = useState(false);
+  const [reportError, setReportError] = useState<string | null>(null);
+
   const loadExpenses = useCallback(async () => {
     setError(null);
     try {
@@ -97,6 +121,9 @@ export default function ExpensesScreen() {
       setMonthLabel(data.monthLabel);
       setTotal(data.total);
       setCanManage(data.canManage);
+      setMyDue(data.residentDue ?? null);
+      setCanManageDues(Boolean(data.canManageDues));
+      setDueSummary(data.residentDueSummary ?? null);
       setBreakdown(data.breakdown);
       setExpenses(data.expenses);
       setCategories(data.categories);
@@ -223,10 +250,148 @@ export default function ExpensesScreen() {
     }
   };
 
+  const openDueAmount = () => {
+    setDueAmountInput(dueSummary?.isSet ? String(dueSummary.amount) : '');
+    setDueNote(dueSummary?.note ?? '');
+    setDueFormError(null);
+    setDueAmountOpen(true);
+  };
+
+  const openCollections = () => {
+    router.push({
+      pathname: '/resident-dues',
+      params: {
+        year: String(year),
+        month: String(month),
+        ...(appAdmin && buildingId ? { buildingId } : {}),
+      },
+    });
+  };
+
+  const handleSaveDue = async () => {
+    const parsed = Number(dueAmountInput.replace(/,/g, ''));
+    if (!Number.isFinite(parsed) || parsed < 0) {
+      setDueFormError('Enter a valid amount.');
+      return;
+    }
+    if (appAdmin && !buildingId) {
+      setDueFormError('Select a building.');
+      return;
+    }
+
+    setSavingDue(true);
+    setDueFormError(null);
+    try {
+      const summary = await saveResidentDue({
+        year,
+        month,
+        amount: parsed,
+        note: dueNote.trim() || undefined,
+        buildingId: appAdmin ? buildingId : undefined,
+      });
+      setDueSummary(summary);
+      setDueAmountOpen(false);
+      showToast('Monthly due updated');
+    } catch (err) {
+      setDueFormError(err instanceof Error ? err.message : 'Failed to save monthly due');
+    } finally {
+      setSavingDue(false);
+    }
+  };
+
+  const handleDownloadReport = async () => {
+    if (appAdmin && !buildingId) {
+      setReportError('Select a building first.');
+      return;
+    }
+    setDownloading(true);
+    setReportError(null);
+    try {
+      await downloadExpenseReport({
+        year,
+        month,
+        includeResidents: reportResidents,
+        buildingId: appAdmin ? buildingId : undefined,
+      });
+      setReportOpen(false);
+    } catch (err) {
+      setReportError(err instanceof Error ? err.message : 'Failed to generate the report');
+    } finally {
+      setDownloading(false);
+    }
+  };
+
   const visibleBreakdown = useMemo(
     () => breakdown.filter((item) => item.amount > 0),
     [breakdown],
   );
+
+  const monthNav = (
+    <View style={styles.monthRow}>
+      <Pressable onPress={() => shiftMonth(-1)} style={styles.monthBtn} hitSlop={8}>
+        <Ionicons name="chevron-back" size={20} color={colors.primary} />
+      </Pressable>
+      <Text style={styles.monthLabel}>{monthLabel || 'This month'}</Text>
+      <Pressable onPress={() => shiftMonth(1)} style={styles.monthBtn} hitSlop={8}>
+        <Ionicons name="chevron-forward" size={20} color={colors.primary} />
+      </Pressable>
+    </View>
+  );
+
+  if (resident) {
+    const paid = myDue?.collected ?? false;
+    const hasDue = myDue?.isSet ?? false;
+
+    return (
+      <View style={styles.root}>
+        <PageHeader title="My Dues" onBack={() => router.back()} />
+        <ScrollView
+          contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 40 }]}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={() => {
+                setRefreshing(true);
+                void loadExpenses();
+              }}
+            />
+          }
+        >
+          {monthNav}
+
+          <View style={[styles.hero, paid && styles.heroPaid]}>
+            <Text style={styles.heroLabel}>Due for {monthLabel || 'this month'}</Text>
+            <Text style={styles.heroValue}>{formatMoney(myDue?.dueAmount ?? 0)}</Text>
+            <View style={styles.statusPill}>
+              <Ionicons
+                name={paid ? 'checkmark-circle' : hasDue ? 'time-outline' : 'information-circle-outline'}
+                size={16}
+                color={colors.white}
+              />
+              <Text style={styles.statusText}>
+                {paid ? 'Collected' : hasDue ? 'Payment pending' : 'Nothing due'}
+              </Text>
+            </View>
+          </View>
+
+          {hasDue && !paid ? (
+            <Text style={styles.muted}>
+              Monthly charge of {formatMoney(myDue?.amount ?? 0)}. It clears once your building admin
+              marks it collected.
+            </Text>
+          ) : null}
+          {paid ? (
+            <Text style={styles.muted}>Your building admin marked this month as collected.</Text>
+          ) : null}
+          {!hasDue && !loading ? (
+            <Text style={styles.muted}>No monthly charge has been set for this month.</Text>
+          ) : null}
+          {myDue?.note ? <Text style={styles.dueNoteText}>{myDue.note}</Text> : null}
+          {error ? <Text style={styles.error}>{error}</Text> : null}
+        </ScrollView>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.root}>
@@ -244,15 +409,7 @@ export default function ExpensesScreen() {
           />
         }
       >
-        <View style={styles.monthRow}>
-          <Pressable onPress={() => shiftMonth(-1)} style={styles.monthBtn} hitSlop={8}>
-            <Ionicons name="chevron-back" size={20} color={colors.primary} />
-          </Pressable>
-          <Text style={styles.monthLabel}>{monthLabel || 'This month'}</Text>
-          <Pressable onPress={() => shiftMonth(1)} style={styles.monthBtn} hitSlop={8}>
-            <Ionicons name="chevron-forward" size={20} color={colors.primary} />
-          </Pressable>
-        </View>
+        {monthNav}
 
         {appAdmin && buildings.length > 0 ? (
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
@@ -286,6 +443,82 @@ export default function ExpensesScreen() {
           >
             <Text style={styles.addBtnText}>+ Add New Expense</Text>
           </Pressable>
+        ) : null}
+
+        {canManage ? (
+          <Pressable
+            style={styles.reportBtn}
+            onPress={() => {
+              setReportError(null);
+              setReportOpen(true);
+            }}
+          >
+            <Ionicons name="download-outline" size={18} color={colors.primary} />
+            <Text style={styles.reportBtnText}>Download report</Text>
+          </Pressable>
+        ) : null}
+
+        {dueSummary ? (
+          <View style={styles.dueCard}>
+            <View style={styles.dueTop}>
+              <View style={styles.dueTopText}>
+                <Text style={styles.dueLabel}>Resident monthly due</Text>
+                <Text style={styles.dueValue}>
+                  {dueSummary.isSet ? formatMoney(dueSummary.amount) : 'Not set'}
+                </Text>
+              </View>
+              {canManageDues ? (
+                <Pressable onPress={openDueAmount} style={styles.dueEdit} hitSlop={8}>
+                  <Ionicons
+                    name={dueSummary.isSet ? 'create-outline' : 'add'}
+                    size={20}
+                    color={colors.primary}
+                  />
+                </Pressable>
+              ) : (
+                <View style={styles.readOnlyPill}>
+                  <Ionicons name="lock-closed" size={12} color={colors.textSecondary} />
+                  <Text style={styles.readOnlyText}>View only</Text>
+                </View>
+              )}
+            </View>
+
+            <Text style={styles.dueMeta}>
+              {dueSummary
+                ? `${dueSummary.collectedCount} of ${dueSummary.residentCount} residents collected`
+                : 'Loading…'}
+            </Text>
+            <View style={styles.track}>
+              <View
+                style={[
+                  styles.fill,
+                  {
+                    backgroundColor: colors.success,
+                    width: `${
+                      dueSummary && dueSummary.residentCount > 0
+                        ? Math.min(100, (dueSummary.collectedCount / dueSummary.residentCount) * 100)
+                        : 0
+                    }%`,
+                  },
+                ]}
+              />
+            </View>
+            <Text style={styles.percent}>
+              {dueSummary
+                ? `${formatMoney(dueSummary.collectedTotal)} collected of ${formatMoney(
+                    dueSummary.expectedTotal,
+                  )}`
+                : ''}
+            </Text>
+
+            <Pressable style={styles.dueManageBtn} onPress={openCollections}>
+              <Ionicons name="people-outline" size={18} color={colors.primary} />
+              <Text style={styles.dueManageText}>
+                {canManageDues ? 'Manage collections' : 'View collections'}
+              </Text>
+              <Ionicons name="chevron-forward" size={16} color={colors.primary} />
+            </Pressable>
+          </View>
         ) : null}
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
@@ -466,6 +699,96 @@ export default function ExpensesScreen() {
           </View>
         </View>
       </Modal>
+
+      <Modal
+        visible={reportOpen}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setReportOpen(false)}
+      >
+        <View style={styles.modalWrap}>
+          <Pressable style={styles.backdrop} onPress={() => setReportOpen(false)} />
+          <View style={[styles.sheet, { paddingBottom: insets.bottom + spacing.lg }]}>
+            <View style={styles.sheetHandle} />
+            <PopupHeader title="Download report" onClose={() => setReportOpen(false)} />
+            <Text style={styles.sheetSubtitle}>
+              A PDF of {monthLabel || 'this month'} with the totals, category breakdown and every
+              line item.
+            </Text>
+
+            <Pressable
+              style={styles.optionRow}
+              onPress={() => setReportResidents((current) => !current)}
+            >
+              <Ionicons
+                name={reportResidents ? 'checkbox' : 'square-outline'}
+                size={22}
+                color={reportResidents ? colors.primary : colors.textSecondary}
+              />
+              <View style={styles.optionText}>
+                <Text style={styles.optionTitle}>Include resident payments</Text>
+                <Text style={styles.optionMeta}>
+                  Adds every resident with their paid or pending status for this month.
+                </Text>
+              </View>
+            </Pressable>
+
+            {reportError ? <Text style={styles.error}>{reportError}</Text> : null}
+            <View style={styles.form}>
+              <Button
+                title="Generate & download"
+                loading={downloading}
+                onPress={() => void handleDownloadReport()}
+              />
+              <Button title="Cancel" variant="outline" onPress={() => setReportOpen(false)} />
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={dueAmountOpen}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setDueAmountOpen(false)}
+      >
+        <KeyboardAvoidingView
+          style={styles.modalWrap}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <Pressable style={styles.backdrop} onPress={() => setDueAmountOpen(false)} />
+          <View style={[styles.sheet, { paddingBottom: insets.bottom + spacing.lg }]}>
+            <View style={styles.sheetHandle} />
+            <PopupHeader title="Resident monthly due" onClose={() => setDueAmountOpen(false)} />
+            <Text style={styles.sheetSubtitle}>
+              Every resident of this building will owe this amount for{' '}
+              {monthLabel || 'this month'}.
+            </Text>
+            <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.form}>
+              <Input
+                label="Amount per resident"
+                value={dueAmountInput}
+                onChangeText={(value) => {
+                  setDueAmountInput(value);
+                  setDueFormError(null);
+                }}
+                placeholder="0.00"
+                keyboardType="decimal-pad"
+              />
+              <Input
+                label="Note (optional)"
+                value={dueNote}
+                onChangeText={setDueNote}
+                placeholder="e.g. Maintenance charge"
+              />
+              {dueFormError ? <Text style={styles.error}>{dueFormError}</Text> : null}
+              <Button title="Save due" loading={savingDue} onPress={() => void handleSaveDue()} />
+              <Button title="Cancel" variant="outline" onPress={() => setDueAmountOpen(false)} />
+            </ScrollView>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
     </View>
   );
 }
@@ -507,6 +830,89 @@ const styles = StyleSheet.create({
     ...shadows.sm,
   },
   addBtnText: { color: colors.white, fontWeight: '700', fontSize: 15 },
+  reportBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 12,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    borderColor: colors.primaryMuted,
+    backgroundColor: colors.primaryLight,
+    marginBottom: spacing.lg,
+  },
+  reportBtnText: { color: colors.primary, fontWeight: '700', fontSize: 14 },
+  optionRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.sm,
+    paddingVertical: spacing.md,
+  },
+  optionText: { flex: 1 },
+  optionTitle: { fontWeight: '700', color: colors.text },
+  optionMeta: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
+  heroPaid: { backgroundColor: colors.success },
+  statusPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: spacing.sm,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: borderRadius.full,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+  },
+  statusText: { color: colors.white, fontWeight: '600', fontSize: 13 },
+  dueNoteText: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    textAlign: 'center',
+    marginBottom: spacing.md,
+  },
+  dueCard: {
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius['2xl'],
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.md,
+    marginBottom: spacing.lg,
+    ...shadows.sm,
+  },
+  dueTop: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  dueTopText: { flex: 1 },
+  dueLabel: { fontSize: 12, fontWeight: '600', color: colors.textSecondary },
+  dueValue: { fontSize: 22, fontWeight: '700', color: colors.text, marginTop: 2 },
+  dueEdit: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: colors.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dueMeta: { fontSize: 12, color: colors.textSecondary, marginTop: spacing.sm, marginBottom: 6 },
+  dueManageBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    marginTop: spacing.md,
+    paddingVertical: 10,
+    borderRadius: borderRadius.md,
+    backgroundColor: colors.primaryLight,
+  },
+  dueManageText: { color: colors.primary, fontWeight: '700', fontSize: 14 },
+  readOnlyPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: borderRadius.full,
+    backgroundColor: colors.slate100,
+  },
+  readOnlyText: { fontSize: 11, fontWeight: '700', color: colors.textSecondary },
   section: { fontWeight: '700', color: colors.text, marginBottom: spacing.md, paddingHorizontal: 4 },
   card: {
     backgroundColor: colors.surface,

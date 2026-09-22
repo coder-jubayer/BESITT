@@ -4,9 +4,10 @@ import { Stack, useRouter, useSegments } from 'expo-router';
 import { ActivityIndicator, View, StyleSheet } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuthStore } from '../src/stores/auth.store';
 import { listenForNoticeTap, initNotifications, registerPushToken } from '../src/services/push.service';
+import { BuildingAccessChrome } from '../src/components/BuildingAccessChrome';
 import { colors } from '../src/theme';
 
 function AuthGate({ children }: { children: React.ReactNode }) {
@@ -42,8 +43,20 @@ function AuthGate({ children }: { children: React.ReactNode }) {
     void registerPushToken();
     let unsubscribe: (() => void) | undefined;
     void listenForNoticeTap((data) => {
-      if (data?.type === 'guest') router.push('/(tabs)/guests');
-      else router.push('/notices');
+      if (data?.type === 'guest') {
+        router.push('/(tabs)/guests');
+      } else if (data?.type === 'message') {
+        router.push({
+          pathname: '/messages',
+          params: {
+            tab: data.tab || 'inbox',
+            ...(data.threadId ? { threadId: data.threadId } : {}),
+            ...(data.groupId ? { groupId: data.groupId } : {}),
+          },
+        } as never);
+      } else {
+        router.push('/notices');
+      }
     }).then((stop) => {
       unsubscribe = stop;
     });
@@ -60,6 +73,16 @@ function AuthGate({ children }: { children: React.ReactNode }) {
       ) : null}
     </View>
   );
+}
+
+/**
+ * Android is edge-to-edge from SDK 54 on, so the app draws underneath the status bar and
+ * `androidStatusBar.backgroundColor` no longer applies. This paints that strip ourselves
+ * so the clock and battery stay readable against a light background.
+ */
+function StatusBarBackdrop() {
+  const insets = useSafeAreaInsets();
+  return <View pointerEvents="none" style={[styles.statusBarBackdrop, { height: insets.top }]} />;
 }
 
 export default function RootLayout() {
@@ -88,8 +111,12 @@ export default function RootLayout() {
             <Stack.Screen name="messages-contacts" />
             <Stack.Screen name="rentals" />
             <Stack.Screen name="users" />
+            <Stack.Screen name="resident-dues" />
+            <Stack.Screen name="add-visitor" />
           </Stack>
+          <BuildingAccessChrome />
         </AuthGate>
+        <StatusBarBackdrop />
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );
@@ -102,6 +129,14 @@ const styles = StyleSheet.create({
   },
   gate: {
     flex: 1,
+  },
+  statusBarBackdrop: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: colors.surface,
+    zIndex: 100,
   },
   boot: {
     ...StyleSheet.absoluteFillObject,

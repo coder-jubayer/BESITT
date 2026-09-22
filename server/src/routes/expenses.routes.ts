@@ -1,18 +1,31 @@
 import { Router, Response, NextFunction } from 'express';
 import { Expense } from '../models/Expense';
 import { ExpenseCategory } from '../models/ExpenseCategory';
+import { ResidentDue } from '../models/ResidentDue';
+import { ResidentDuePayment } from '../models/ResidentDuePayment';
 import { Building } from '../models/Building';
 import { User } from '../models/User';
 import { AppError } from '../middleware/errorHandler';
-import { AuthRequest, requireAuth, requireExpenseManager } from '../middleware/auth';
-import { canManageExpenses, isAppAdmin } from '../constants/roles';
+import {
+  AuthRequest,
+  requireAuth,
+  requireExpenseManager,
+  requireResidentDueManager,
+} from '../middleware/auth';
+import { canManageExpenses, canManageResidentDues, isAppAdmin, isResident } from '../constants/roles';
 import {
   CategoryMeta,
   EXPENSE_COLOR_PALETTE,
+  expenseCategoryMeta,
   nextCategoryColor,
   slugifyCategory,
 } from '../constants/expenses';
 import { loadBuildingCategories } from '../utils/expenseCategories';
+import {
+  ExpenseReportData,
+  expenseReportFilename,
+  writeExpenseReport,
+} from '../utils/expenseReport';
 
 const router = Router();
 
@@ -90,10 +103,82 @@ function buildBreakdown(
   return rows;
 }
 
+function activeResidentFilter(buildingId: string) {
+  return { buildingId, role: 'resident', isActive: { $ne: false } } as const;
+}
+
+async function loadResidentDueSummary(buildingId: string, year: number, month: number) {
+  const [due, residentCount, payments] = await Promise.all([
+    ResidentDue.findOne({ buildingId, year, month }),
+    User.countDocuments(activeResidentFilter(buildingId)),
+    ResidentDuePayment.find({ buildingId, year, month }),
+  ]);
+
+  const amount = due?.amount ?? 0;
+  const collectedTotal = payments.reduce((sum, item) => sum + item.amount, 0);
+
+  return {
+    isSet: Boolean(due),
+    amount,
+    note: due?.note,
+    setByName: due?.setByName,
+    residentCount,
+    collectedCount: payments.length,
+    pendingCount: Math.max(0, residentCount - payments.length),
+    expectedTotal: Math.round(amount * residentCount * 100) / 100,
+    collectedTotal: Math.round(collectedTotal * 100) / 100,
+  };
+}
+
+async function loadMyResidentDue(
+  buildingId: string,
+  userId: string,
+  year: number,
+  month: number,
+) {
+  const due = await ResidentDue.findOne({ buildingId, year, month });
+  const payment = await ResidentDuePayment.findOne({ buildingId, year, month, userId });
+  const amount = due?.amount ?? 0;
+  const collected = Boolean(payment);
+
+  return {
+    isSet: Boolean(due),
+    amount,
+    dueAmount: collected ? 0 : amount,
+    collected,
+    collectedAt: payment ? (payment.createdAt ?? new Date()).toISOString() : undefined,
+    note: due?.note,
+  };
+}
+
 router.get('/', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const actor = req.user!;
     const { year, month } = parseMonthYear(req.query);
+
+    // Residents never see society expense details — only what they owe this month.
+    if (isResident(actor.role)) {
+      if (!actor.buildingId) {
+        throw new AppError(400, 'Your account is not linked to a building');
+      }
+      const residentDue = await loadMyResidentDue(actor.buildingId, actor.userId, year, month);
+      res.json({
+        success: true,
+        data: {
+          year,
+          month,
+          monthLabel: monthLabel(year, month),
+          total: 0,
+          canManage: false,
+          categories: [],
+          breakdown: [],
+          expenses: [],
+          residentDue,
+        },
+      });
+      return;
+    }
+
     const buildings = isAppAdmin(actor.role)
       ? (await Building.find().sort({ name: 1 })).map((b) => b.toSafeJSON())
       : undefined;
@@ -111,6 +196,11 @@ router.get('/', async (req: AuthRequest, res: Response, next: NextFunction) => {
       : [];
     const breakdown = buildBreakdown(categories, expenses);
     const total = expenses.reduce((sum, item) => sum + item.amount, 0);
+    // Committee can see the monthly due and collections; only admins may change them.
+    const canManageDues = canManageResidentDues(actor.role);
+    const residentDueSummary = buildingId
+      ? await loadResidentDueSummary(buildingId, year, month)
+      : undefined;
 
     res.json({
       success: true,
@@ -120,10 +210,12 @@ router.get('/', async (req: AuthRequest, res: Response, next: NextFunction) => {
         monthLabel: monthLabel(year, month),
         total,
         canManage: canManageExpenses(actor.role),
+        canManageDues,
         categories,
         breakdown,
         expenses: expenses.map((item) => item.toSafeJSON(categories)),
         buildings,
+        residentDueSummary,
       },
     });
   } catch (error) {
@@ -228,6 +320,268 @@ router.post('/', requireExpenseManager, async (req: AuthRequest, res: Response, 
     next(error);
   }
 });
+
+router.get(
+  '/report',
+  requireExpenseManager,
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const actor = req.user!;
+      const { year, month } = parseMonthYear(req.query);
+      const buildingId = await resolveBuildingId(
+        actor,
+        req.query.buildingId ? String(req.query.buildingId) : undefined,
+      );
+      const includeResidents = String(req.query.includeResidents ?? '') === 'true';
+
+      const [building, categories, expenses, reporter] = await Promise.all([
+        Building.findById(buildingId),
+        loadBuildingCategories(buildingId),
+        Expense.find({ buildingId, year, month }).sort({ createdAt: -1 }),
+        User.findById(actor.userId),
+      ]);
+
+      const total = expenses.reduce((sum, item) => sum + item.amount, 0);
+      const breakdown = buildBreakdown(categories, expenses).filter((row) => row.amount > 0);
+
+      let residents: ExpenseReportData['residents'];
+      if (includeResidents) {
+        const [summary, people, payments] = await Promise.all([
+          loadResidentDueSummary(buildingId, year, month),
+          User.find(activeResidentFilter(buildingId)).sort({ unitNumber: 1, name: 1 }),
+          ResidentDuePayment.find({ buildingId, year, month }),
+        ]);
+        const paid = new Map(payments.map((item) => [item.userId, item]));
+        residents = {
+          dueAmount: summary.amount,
+          dueIsSet: summary.isSet,
+          residentCount: summary.residentCount,
+          collectedCount: summary.collectedCount,
+          expectedTotal: summary.expectedTotal,
+          collectedTotal: summary.collectedTotal,
+          rows: people.map((person) => {
+            const payment = paid.get(person._id.toString());
+            return {
+              name: person.name,
+              unitNumber: person.unitNumber,
+              collected: Boolean(payment),
+              amount: payment?.amount ?? 0,
+            };
+          }),
+        };
+      }
+
+      const data: ExpenseReportData = {
+        buildingName: building?.name?.trim() || 'Society',
+        monthLabel: monthLabel(year, month),
+        generatedBy: reporter?.name?.trim() || 'Committee',
+        total,
+        breakdown: breakdown.map((row) => ({
+          label: row.label,
+          amount: row.amount,
+          percent: row.percent,
+        })),
+        lineItems: expenses.map((item) => ({
+          createdAt: (item.createdAt ?? new Date()).toISOString(),
+          categoryLabel: expenseCategoryMeta(item.category, categories).label,
+          note: item.note,
+          addedByName: item.addedByName,
+          amount: item.amount,
+        })),
+        residents,
+      };
+
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader(
+        'Content-Disposition',
+        `attachment; filename="${expenseReportFilename(data.buildingName, data.monthLabel)}"`,
+      );
+      writeExpenseReport(res, data);
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+router.get(
+  '/resident-dues',
+  requireExpenseManager,
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const actor = req.user!;
+      const { year, month } = parseMonthYear(req.query);
+      const buildingId = await resolveBuildingId(
+        actor,
+        req.query.buildingId ? String(req.query.buildingId) : undefined,
+      );
+
+      const [summary, residents, payments] = await Promise.all([
+        loadResidentDueSummary(buildingId, year, month),
+        User.find(activeResidentFilter(buildingId)).sort({ unitNumber: 1, name: 1 }),
+        ResidentDuePayment.find({ buildingId, year, month }),
+      ]);
+
+      const paid = new Map(payments.map((item) => [item.userId, item]));
+
+      res.json({
+        success: true,
+        data: {
+          year,
+          month,
+          monthLabel: monthLabel(year, month),
+          canManage: canManageResidentDues(actor.role),
+          summary,
+          residents: residents.map((resident) => {
+            const payment = paid.get(resident._id.toString());
+            return {
+              id: resident._id.toString(),
+              name: resident.name,
+              unitNumber: resident.unitNumber,
+              avatar: resident.avatar,
+              collected: Boolean(payment),
+              collectedAt: payment ? (payment.createdAt ?? new Date()).toISOString() : undefined,
+              dueAmount: payment ? 0 : summary.amount,
+            };
+          }),
+        },
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+router.post(
+  '/resident-dues',
+  requireResidentDueManager,
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const actor = req.user!;
+      const { year, month } = parseMonthYear(req.body);
+      const amount = Number(req.body.amount);
+      const note = req.body.note ? String(req.body.note).trim() : undefined;
+
+      if (!Number.isFinite(amount) || amount < 0) {
+        throw new AppError(400, 'Enter a valid monthly amount');
+      }
+
+      const buildingId = await resolveBuildingId(
+        actor,
+        req.body.buildingId ? String(req.body.buildingId) : undefined,
+      );
+      const setter = await User.findById(actor.userId);
+      const rounded = Math.round(amount * 100) / 100;
+
+      await ResidentDue.findOneAndUpdate(
+        { buildingId, year, month },
+        {
+          $set: {
+            amount: rounded,
+            note,
+            setBy: actor.userId,
+            setByName: setter?.name?.trim() || 'Building Admin',
+          },
+        },
+        { upsert: true, new: true, setDefaultsOnInsert: true },
+      );
+
+      // Keep already-collected records aligned with the latest amount.
+      await ResidentDuePayment.updateMany(
+        { buildingId, year, month },
+        { $set: { amount: rounded } },
+      );
+
+      const summary = await loadResidentDueSummary(buildingId, year, month);
+      res.json({
+        success: true,
+        message: 'Monthly resident due updated',
+        data: { summary },
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+router.delete(
+  '/resident-dues',
+  requireResidentDueManager,
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const actor = req.user!;
+      const { year, month } = parseMonthYear(req.query);
+      const buildingId = await resolveBuildingId(
+        actor,
+        req.query.buildingId ? String(req.query.buildingId) : undefined,
+      );
+
+      await ResidentDue.deleteOne({ buildingId, year, month });
+      await ResidentDuePayment.deleteMany({ buildingId, year, month });
+
+      const summary = await loadResidentDueSummary(buildingId, year, month);
+      res.json({ success: true, message: 'Monthly resident due removed', data: { summary } });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+router.post(
+  '/resident-dues/collect',
+  requireResidentDueManager,
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const actor = req.user!;
+      const { year, month } = parseMonthYear(req.body);
+      const userId = String(req.body.userId ?? '').trim();
+      const collected = req.body.collected !== false;
+
+      if (!userId) {
+        throw new AppError(400, 'Select a resident');
+      }
+
+      const buildingId = await resolveBuildingId(
+        actor,
+        req.body.buildingId ? String(req.body.buildingId) : undefined,
+      );
+
+      const resident = await User.findById(userId);
+      if (!resident || resident.buildingId !== buildingId || resident.role !== 'resident') {
+        throw new AppError(404, 'Resident not found in this building');
+      }
+
+      if (collected) {
+        const due = await ResidentDue.findOne({ buildingId, year, month });
+        if (!due) {
+          throw new AppError(400, 'Set the monthly resident due before marking collections');
+        }
+        const collector = await User.findById(actor.userId);
+        await ResidentDuePayment.findOneAndUpdate(
+          { buildingId, year, month, userId },
+          {
+            $set: {
+              amount: due.amount,
+              collectedBy: actor.userId,
+              collectedByName: collector?.name?.trim() || 'Building Admin',
+            },
+          },
+          { upsert: true, new: true, setDefaultsOnInsert: true },
+        );
+      } else {
+        await ResidentDuePayment.deleteOne({ buildingId, year, month, userId });
+      }
+
+      const summary = await loadResidentDueSummary(buildingId, year, month);
+      res.json({
+        success: true,
+        message: collected ? 'Marked as collected' : 'Marked as pending',
+        data: { summary },
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
 
 router.delete('/:id', requireExpenseManager, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {

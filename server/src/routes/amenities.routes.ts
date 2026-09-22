@@ -6,7 +6,12 @@ import { Building } from '../models/Building';
 import { User } from '../models/User';
 import { AppError } from '../middleware/errorHandler';
 import { AuthRequest, requireAuth, requireAmenityBooker, requireAmenityManager } from '../middleware/auth';
-import { canBookAmenities, canManageAmenityBookings, isAppAdmin } from '../constants/roles';
+import {
+  canBookAmenities,
+  canManageAmenityBookings,
+  canViewAmenitySchedule,
+  isAppAdmin,
+} from '../constants/roles';
 import {
   AMENITIES,
   AmenityDefinition,
@@ -138,6 +143,7 @@ router.get('/', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const actor = req.user!;
     const canManage = canManageAmenityBookings(actor.role);
+    const canViewSchedule = canViewAmenitySchedule(actor.role);
     const buildings = isAppAdmin(actor.role)
       ? (await Building.find().sort({ name: 1 })).map((item) => item.toSafeJSON())
       : undefined;
@@ -197,7 +203,7 @@ router.get('/', async (req: AuthRequest, res: Response, next: NextFunction) => {
     const nextBooking = upcomingMine[0] ? withCancel(upcomingMine[0], actor.userId, actor.role) : null;
 
     let dayBookings;
-    if (canManage) {
+    if (canViewSchedule) {
       const infos = await userInfoMap(bookings.map((item) => item.userId));
       dayBookings = bookings.map((item) =>
         bookingForManager(item, actor.userId, actor.role, infos.get(item.userId)),
@@ -215,6 +221,7 @@ router.get('/', async (req: AuthRequest, res: Response, next: NextFunction) => {
         nextBooking,
         canBook: canBookAmenities(actor.role),
         canManage,
+        canViewSchedule,
         slotMinuteOptions: [...SLOT_MINUTE_OPTIONS],
         buildings,
       },
@@ -228,6 +235,7 @@ router.get('/bookings', async (req: AuthRequest, res: Response, next: NextFuncti
   try {
     const actor = req.user!;
     const canManage = canManageAmenityBookings(actor.role);
+    const canViewSchedule = canViewAmenitySchedule(actor.role);
     const buildingId = await resolveBuildingId(
       actor,
       req.query.buildingId ? String(req.query.buildingId) : undefined,
@@ -239,21 +247,21 @@ router.get('/bookings', async (req: AuthRequest, res: Response, next: NextFuncti
       status: 'booked',
       date: date || { $gte: todayKey() },
     };
-    if (!canManage) query.userId = actor.userId;
+    if (!canViewSchedule) query.userId = actor.userId;
 
     const found = await AmenityBooking.find(query).sort({ date: 1, startTime: 1 });
-    const infos = canManage ? await userInfoMap(found.map((item) => item.userId)) : new Map();
+    const infos = canViewSchedule ? await userInfoMap(found.map((item) => item.userId)) : new Map();
     const bookings = found
       .filter((item) => date || !isPastSlot(item.date, item.startTime))
       .map((item) =>
-        canManage
+        canViewSchedule
           ? bookingForManager(item, actor.userId, actor.role, infos.get(item.userId))
           : withCancel(item, actor.userId, actor.role),
       );
 
     res.json({
       success: true,
-      data: { bookings, canManage },
+      data: { bookings, canManage, canViewSchedule },
     });
   } catch (error) {
     next(error);
@@ -311,6 +319,7 @@ router.get('/:amenityId/slots', async (req: AuthRequest, res: Response, next: Ne
   try {
     const actor = req.user!;
     const canManage = canManageAmenityBookings(actor.role);
+    const canViewSchedule = canViewAmenitySchedule(actor.role);
     const amenityId = String(req.params.amenityId);
     const buildingId = await resolveBuildingId(
       actor,
@@ -330,7 +339,7 @@ router.get('/:amenityId/slots', async (req: AuthRequest, res: Response, next: Ne
       date,
       status: 'booked',
     }).sort({ startTime: 1 });
-    const infos = canManage ? await userInfoMap(bookings.map((item) => item.userId)) : new Map();
+    const infos = canViewSchedule ? await userInfoMap(bookings.map((item) => item.userId)) : new Map();
 
     const slots = generated.map((slot) => {
       const occupants = bookings.filter((item) => item.startTime === slot.startTime);
@@ -348,7 +357,7 @@ router.get('/:amenityId/slots', async (req: AuthRequest, res: Response, next: Ne
         available,
         mine: Boolean(mine),
         myBookingId: mine?._id.toString(),
-        bookedBy: canManage
+        bookedBy: canViewSchedule
           ? occupants.map((item) => {
               const info = infos.get(item.userId);
               return {
@@ -388,8 +397,9 @@ router.get('/:amenityId/slots', async (req: AuthRequest, res: Response, next: Ne
         },
         canBook: canBookAmenities(actor.role),
         canManage,
+        canViewSchedule,
         slotMinuteOptions: [...SLOT_MINUTE_OPTIONS],
-        dayBookings: canManage
+        dayBookings: canViewSchedule
           ? bookings.map((item) =>
               bookingForManager(item, actor.userId, actor.role, infos.get(item.userId)),
             )

@@ -1,31 +1,15 @@
-import { useEffect, useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
-  Pressable,
-} from 'react-native';
+import { useEffect } from 'react';
+import { View, Text, Image, StyleSheet, Pressable } from 'react-native';
 import { Redirect, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Button, Input, Card } from '../../src/components/ui';
+import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../../src/stores/auth.store';
-import { colors, spacing, typography } from '../../src/theme';
+import { colors, spacing, typography, borderRadius, shadows } from '../../src/theme';
 
-export default function SignupScreen() {
+export default function SignupRoleScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { signup, isAuthenticated, isLoading, isHydrated } = useAuthStore();
-
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [phone, setPhone] = useState('');
-  const [buildingName, setBuildingName] = useState('');
-  const [error, setError] = useState<string | null>(null);
+  const { isAuthenticated, isHydrated } = useAuthStore();
 
   useEffect(() => {
     if (isHydrated && isAuthenticated) {
@@ -37,157 +21,110 @@ export default function SignupScreen() {
     return <Redirect href="/(tabs)/home" />;
   }
 
-  const handleSignup = async () => {
-    if (!name.trim() || !email.trim() || !password || !buildingName.trim()) {
-      setError('Name, email, password, and building name are required.');
-      return;
-    }
-    if (password.length < 6) {
-      setError('Password must be at least 6 characters.');
-      return;
-    }
-    if (password !== confirmPassword) {
-      setError('Passwords do not match.');
-      return;
-    }
-
-    setError(null);
-    try {
-      await signup({
-        name: name.trim(),
-        email: email.trim().toLowerCase(),
-        password,
-        buildingName: buildingName.trim(),
-        phone: phone.trim() || undefined,
-      });
-      router.replace('/(tabs)/home');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Signup failed');
-    }
-  };
-
   return (
-    <KeyboardAvoidingView
-      style={styles.flex}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    <View
+      style={[
+        styles.root,
+        {
+          paddingTop: insets.top + spacing.xl,
+          paddingBottom: insets.bottom + spacing.xl,
+        },
+      ]}
     >
-      <View style={[styles.header, { paddingTop: insets.top + spacing.lg }]}>
-        <View style={styles.logo}>
-          <Text style={styles.logoText}>BG</Text>
-        </View>
-        <Text style={styles.appName}>Building Admin</Text>
-        <Text style={styles.tagline}>Create your community account</Text>
+      <View style={styles.header}>
+        <Image
+          source={require('../../assets/logo.png')}
+          style={styles.logo}
+          accessibilityLabel="Barighorr"
+        />
+        <Text style={styles.appName}>Create an account</Text>
+        <Text style={styles.tagline}>Choose how you want to join Barighorr</Text>
       </View>
 
-      <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={[
-          styles.formWrap,
-          { paddingBottom: insets.bottom + spacing.xl },
-        ]}
-        keyboardShouldPersistTaps="handled"
-      >
-        <Card>
-          <View style={styles.form}>
-            <Input
-              label="Full name"
-              placeholder="Your name"
-              value={name}
-              onChangeText={(value) => {
-                setName(value);
-                setError(null);
-              }}
-            />
-            <Input
-              label="Building / Community name"
-              placeholder="Sunset Apartments"
-              value={buildingName}
-              onChangeText={(value) => {
-                setBuildingName(value);
-                setError(null);
-              }}
-            />
-            <Input
-              label="Email"
-              placeholder="you@email.com"
-              value={email}
-              onChangeText={(value) => {
-                setEmail(value);
-                setError(null);
-              }}
-              keyboardType="email-address"
-              autoCapitalize="none"
-              autoCorrect={false}
-            />
-            <Input
-              label="Phone (optional)"
-              placeholder="+880..."
-              value={phone}
-              onChangeText={setPhone}
-              keyboardType="phone-pad"
-            />
-            <Input
-              label="Password"
-              placeholder="Min 6 characters"
-              value={password}
-              onChangeText={(value) => {
-                setPassword(value);
-                setError(null);
-              }}
-              secureTextEntry
-            />
-            <Input
-              label="Confirm password"
-              placeholder="Re-enter password"
-              value={confirmPassword}
-              onChangeText={(value) => {
-                setConfirmPassword(value);
-                setError(null);
-              }}
-              secureTextEntry
-            />
-            {error ? <Text style={styles.error}>{error}</Text> : null}
-            <Button title="Create Account" fullWidth loading={isLoading} onPress={handleSignup} />
+      <View style={styles.choices}>
+        <Pressable
+          style={({ pressed }) => [styles.choice, pressed && styles.choicePressed]}
+          onPress={() => router.push('/(auth)/signup-resident')}
+        >
+          <View style={[styles.iconWrap, { backgroundColor: colors.primaryLight }]}>
+            <Ionicons name="home-outline" size={28} color={colors.primary} />
           </View>
-        </Card>
-
-        <Pressable onPress={() => router.replace('/(auth)/login')}>
-          <Text style={styles.switchText}>
-            Already have an account? <Text style={styles.switchLink}>Sign in</Text>
-          </Text>
+          <View style={styles.choiceCopy}>
+            <Text style={styles.choiceTitle}>Resident</Text>
+            <Text style={styles.choiceDesc}>Join an existing building with a code</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color={colors.slate200} />
         </Pressable>
-      </ScrollView>
-    </KeyboardAvoidingView>
+
+        <Pressable
+          style={({ pressed }) => [styles.choice, pressed && styles.choicePressed]}
+          onPress={() => router.push('/(auth)/signup-admin')}
+        >
+          <View style={[styles.iconWrap, { backgroundColor: '#ECFDF5' }]}>
+            <Ionicons name="business-outline" size={28} color={colors.success} />
+          </View>
+          <View style={styles.choiceCopy}>
+            <Text style={styles.choiceTitle}>Building Admin</Text>
+            <Text style={styles.choiceDesc}>Register a new building and get a join code</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color={colors.slate200} />
+        </Pressable>
+      </View>
+
+      <Pressable onPress={() => router.replace('/(auth)/login')}>
+        <Text style={styles.switchText}>
+          Already have an account? <Text style={styles.switchLink}>Sign in</Text>
+        </Text>
+      </Pressable>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  flex: { flex: 1, backgroundColor: colors.background },
+  root: {
+    flex: 1,
+    backgroundColor: colors.background,
+    paddingHorizontal: spacing.lg,
+    justifyContent: 'center',
+    gap: spacing.xl,
+  },
   header: {
     alignItems: 'center',
     gap: spacing.sm,
-    paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.md,
-    backgroundColor: colors.background,
-  },
-  scroll: { flex: 1 },
-  formWrap: {
-    paddingHorizontal: spacing.lg,
-    gap: spacing.lg,
   },
   logo: {
-    width: 72,
-    height: 72,
-    borderRadius: 20,
-    backgroundColor: colors.primary,
+    width: 96,
+    height: 96,
+    borderRadius: borderRadius.xl,
+  },
+  appName: { ...typography.h2, color: colors.text },
+  tagline: { ...typography.bodySmall, color: colors.textSecondary, textAlign: 'center' },
+  choices: { gap: spacing.md },
+  choice: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius['2xl'],
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.md,
+    ...shadows.sm,
+  },
+  choicePressed: {
+    opacity: 0.92,
+    transform: [{ scale: 0.99 }],
+  },
+  iconWrap: {
+    width: 56,
+    height: 56,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  logoText: { fontSize: 28, fontWeight: '800', color: colors.white },
-  appName: { ...typography.h2, color: colors.text },
-  tagline: { ...typography.bodySmall, color: colors.textSecondary },
-  form: { gap: spacing.md },
-  error: { color: colors.error, fontSize: 13, textAlign: 'center' },
+  choiceCopy: { flex: 1, gap: 2 },
+  choiceTitle: { fontSize: 16, fontWeight: '700', color: colors.text },
+  choiceDesc: { fontSize: 13, color: colors.textSecondary, lineHeight: 18 },
   switchText: {
     ...typography.bodySmall,
     color: colors.textSecondary,

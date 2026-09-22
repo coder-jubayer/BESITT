@@ -14,6 +14,7 @@ import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
+import * as Clipboard from 'expo-clipboard';
 import { PageHeader } from '../../src/components/PageHeader';
 import { PopupHeader } from '../../src/components/PopupHeader';
 import { Button, Input } from '../../src/components/ui';
@@ -47,6 +48,12 @@ export default function ProfileScreen() {
   const showToast = (message: string) => {
     setToast(message);
     setTimeout(() => setToast(null), 2200);
+  };
+
+  const copyBuildingCode = async () => {
+    if (!user?.buildingCode) return;
+    await Clipboard.setStringAsync(user.buildingCode);
+    showToast('Building code copied');
   };
 
   const openEdit = () => {
@@ -144,14 +151,9 @@ export default function ProfileScreen() {
       onPress: openEdit,
     },
     {
-      icon: 'settings-outline' as const,
-      label: 'Preferences',
-      onPress: () => showToast('Coming in a later phase'),
-    },
-    {
       icon: 'help-circle-outline' as const,
       label: 'Help & Support',
-      onPress: () => showToast('Coming in a later phase'),
+      onPress: () => router.push('/complaints'),
     },
   ];
 
@@ -192,6 +194,23 @@ export default function ProfileScreen() {
             <Text style={styles.editChipText}>Edit profile</Text>
           </Pressable>
         </View>
+
+        {user?.buildingCode ? (
+          <Pressable style={styles.codeCard} onPress={() => void copyBuildingCode()}>
+            <View style={styles.codeInfo}>
+              <Text style={styles.codeLabel}>BUILDING CODE</Text>
+              <Text style={styles.codeValue}>{user.buildingCode}</Text>
+              <Text style={styles.codeHint}>
+                {canManageUsers(user.role)
+                  ? 'Tap to copy, then share it so residents can join'
+                  : 'Tap to copy and share it with your neighbours'}
+              </Text>
+            </View>
+            <View style={styles.codeCopy}>
+              <Ionicons name="copy-outline" size={18} color={colors.primary} />
+            </View>
+          </Pressable>
+        ) : null}
 
         <View style={styles.menuCard}>
           {menu.map((item, i) => (
@@ -251,7 +270,9 @@ export default function ProfileScreen() {
                 onChangeText={setUnitNumber}
                 placeholder="A-101"
               />
-              <Input label="Email" value={user?.email ?? ''} editable={false} />
+              {user?.email ? (
+                <Input label="Email" value={user.email} editable={false} />
+              ) : null}
               <Input
                 label="Current password"
                 value={currentPassword}
@@ -390,6 +411,29 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   editChipText: { color: colors.primary, fontWeight: '700', fontSize: 13 },
+  codeCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius['3xl'],
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.lg,
+    ...shadows.sm,
+  },
+  codeInfo: { flex: 1, gap: 2 },
+  codeLabel: { fontSize: 10, fontWeight: '700', color: colors.textMuted, letterSpacing: 0.5 },
+  codeValue: { fontSize: 26, fontWeight: '800', color: colors.text, letterSpacing: 5 },
+  codeHint: { fontSize: 11, color: colors.textSecondary, lineHeight: 15 },
+  codeCopy: {
+    width: 40,
+    height: 40,
+    borderRadius: borderRadius.full,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.primaryLight,
+  },
   menuCard: {
     backgroundColor: colors.surface,
     borderRadius: borderRadius['3xl'],

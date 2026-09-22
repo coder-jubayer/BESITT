@@ -53,6 +53,8 @@ export function CustomTabBar({ state, navigation }: BottomTabBarProps) {
     return () => loop.stop();
   }, [waiting, pulse]);
 
+  const homeIndex = TABS.findIndex((tab) => tab.name === 'home');
+
   return (
     <View style={[styles.bar, { paddingBottom: Math.max(insets.bottom, 8) }]}>
       {TABS.map((tab, index) => {
@@ -71,7 +73,7 @@ export function CustomTabBar({ state, navigation }: BottomTabBarProps) {
           }
         };
 
-        if (index === 2) {
+        if (index === homeIndex) {
           return (
             <Pressable
               key={tab.name}

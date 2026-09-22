@@ -39,6 +39,7 @@ import {
   Building,
   canBookAmenities,
   canManageAmenityBookings,
+  canViewAmenitySchedule,
   isAppAdmin,
 } from '../src/types';
 
@@ -137,6 +138,7 @@ export default function AmenitiesScreen() {
   const user = useAuthStore((s) => s.user);
   const booker = canBookAmenities(user?.role);
   const manager = canManageAmenityBookings(user?.role);
+  const viewer = canViewAmenitySchedule(user?.role);
   const appAdmin = isAppAdmin(user?.role);
 
   const [date, setDate] = useState('');
@@ -148,6 +150,7 @@ export default function AmenitiesScreen() {
   const [buildingId, setBuildingId] = useState('');
   const [canBook, setCanBook] = useState(booker);
   const [canManage, setCanManage] = useState(manager);
+  const [canViewSchedule, setCanViewSchedule] = useState(viewer);
   const [slotMinuteOptions, setSlotMinuteOptions] = useState<number[]>([30, 45, 60]);
   const [savingMinutes, setSavingMinutes] = useState(false);
   const [draftMinutes, setDraftMinutes] = useState('60');
@@ -183,6 +186,7 @@ export default function AmenitiesScreen() {
       setDayBookings(data.dayBookings ?? []);
       setCanBook(data.canBook);
       setCanManage(Boolean(data.canManage));
+      setCanViewSchedule(Boolean(data.canViewSchedule ?? data.canManage));
       setSlotMinuteOptions(data.slotMinuteOptions?.length ? data.slotMinuteOptions : [30, 45, 60]);
       setBuildings(data.buildings ?? []);
       setBuildingId((current) => current || data.buildings?.[0]?.id || '');
@@ -203,6 +207,9 @@ export default function AmenitiesScreen() {
           buildingId: appAdmin ? buildingId || undefined : undefined,
         });
         setSlotsData(data);
+        setCanBook(data.canBook);
+        setCanManage(Boolean(data.canManage));
+        setCanViewSchedule(Boolean(data.canViewSchedule ?? data.canManage));
       } catch (err) {
         showToast(err instanceof Error ? err.message : 'Failed to load time slots');
       } finally {
@@ -405,7 +412,7 @@ export default function AmenitiesScreen() {
     if (slot.past) return 'Past';
     if (slot.mine) return 'Yours · Cancel';
     if (slot.available) return slot.capacity > 1 ? `${slot.remaining} left` : 'Book';
-    if (canManage && slot.bookedBy[0]) return slot.bookedBy[0].name;
+    if (canViewSchedule && slot.bookedBy[0]) return slot.bookedBy[0].name;
     return 'Booked';
   };
 
@@ -542,7 +549,7 @@ export default function AmenitiesScreen() {
             })}
           </View>
 
-          {canManage ? (
+          {canViewSchedule ? (
             <View style={styles.section}>
               <View style={styles.whoHeader}>
                 <Text style={styles.sectionTitle}>Who booked</Text>
@@ -709,7 +716,7 @@ export default function AmenitiesScreen() {
 
   return (
     <View style={styles.root}>
-      <PageHeader title="Book Amenity" onBack={() => router.back()} />
+      <PageHeader title={canBook ? 'Book Amenity' : 'Amenity slots'} onBack={() => router.back()} />
       <ScrollView
         contentContainerStyle={[styles.list, { paddingBottom: insets.bottom + 40 }]}
         refreshControl={
@@ -739,6 +746,10 @@ export default function AmenitiesScreen() {
         ) : null}
 
         <DateBar dates={dates} date={date} onSelect={setDate} />
+
+        {canViewSchedule && !canBook ? (
+          <Text style={styles.hint}>Open a facility to see who booked each slot. Guards cannot book slots.</Text>
+        ) : null}
 
         {loading ? <ActivityIndicator color={colors.primary} style={{ marginTop: 16 }} /> : null}
         {error ? <Text style={styles.error}>{error}</Text> : null}

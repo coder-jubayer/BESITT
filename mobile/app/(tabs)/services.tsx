@@ -3,6 +3,8 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { PageHeader } from '../../src/components/PageHeader';
 import { colors, spacing, borderRadius, shadows } from '../../src/theme';
+import { useAuthStore } from '../../src/stores/auth.store';
+import { isGuard, isResident } from '../../src/types';
 
 const SERVICES = [
   {
@@ -37,24 +39,36 @@ const SERVICES = [
     color: colors.error,
     href: '/directory',
   },
-  {
-    title: 'Rental Records',
-    description: 'Units, tenants & occupancy',
-    icon: 'home' as const,
-    bg: '#EEF2FF',
-    color: colors.primary,
-    href: '/rentals',
-  },
 ];
 
 export default function ServicesScreen() {
   const router = useRouter();
+  const role = useAuthStore((s) => s.user)?.role;
+  const resident = isResident(role);
+  const guard = isGuard(role);
+
+  const services = SERVICES.filter((service) => {
+    if (guard) {
+      return (
+        service.href === '/amenities' ||
+        service.href === '/complaints' ||
+        service.href === '/directory'
+      );
+    }
+    return true;
+  }).map((service) =>
+    guard && service.href === '/amenities'
+      ? { ...service, title: 'Book Amenities', description: 'See who booked each facility' }
+      : resident && service.href === '/expenses'
+        ? { ...service, title: 'My Dues', description: 'Your monthly charge & status' }
+        : service,
+  );
 
   return (
     <View style={styles.root}>
       <PageHeader title="Services" />
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        {SERVICES.map((s) => (
+        {services.map((s) => (
           <Pressable
             key={s.title}
             style={styles.card}
@@ -77,7 +91,12 @@ export default function ServicesScreen() {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.background },
-  content: { padding: spacing.lg, paddingBottom: 120, gap: spacing.md },
+  content: {
+    padding: spacing.lg,
+    paddingTop: spacing.md,
+    paddingBottom: 120,
+    gap: spacing.md,
+  },
   card: {
     flexDirection: 'row',
     alignItems: 'center',

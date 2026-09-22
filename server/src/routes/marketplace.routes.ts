@@ -9,6 +9,7 @@ import { Building } from '../models/Building';
 import { User } from '../models/User';
 import { AppError } from '../middleware/errorHandler';
 import { AuthRequest, requireAuth, requireListingCreator } from '../middleware/auth';
+import { sendUserPush } from '../utils/push';
 import {
   canCreateListing,
   canModerateMarketplace,
@@ -249,12 +250,25 @@ router.post(
 
       thread.lastMessage = text || 'Photo';
       thread.lastMessageAt = message.createdAt;
+      const recipientId = actor.userId === thread.buyerId ? thread.sellerId : thread.buyerId;
       if (actor.userId === thread.buyerId) {
         thread.sellerUnread = 1;
       } else {
         thread.buyerUnread = 1;
       }
       await thread.save();
+
+      void sendUserPush({
+        userId: recipientId,
+        title: `${senderName} · ${thread.listingTitle}`,
+        body: thread.lastMessage,
+        channelId: 'messages',
+        data: {
+          type: 'message',
+          tab: 'marketplace',
+          threadId: thread._id.toString(),
+        },
+      });
 
       res.status(201).json({
         success: true,
@@ -365,6 +379,14 @@ router.post('/:id/contact', async (req: AuthRequest, res: Response, next: NextFu
       thread.lastMessageAt = message.createdAt;
       thread.sellerUnread = 1;
       await thread.save();
+
+      void sendUserPush({
+        userId: thread.sellerId,
+        title: `${thread.buyerName} · ${thread.listingTitle}`,
+        body: text,
+        channelId: 'messages',
+        data: { type: 'message', tab: 'marketplace', threadId: thread._id.toString() },
+      });
     }
 
     await MarketplaceMessage.updateMany(

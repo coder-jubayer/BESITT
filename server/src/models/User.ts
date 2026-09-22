@@ -4,7 +4,8 @@ import { USER_ROLES, UserRole } from '../constants/roles';
 
 export interface IUser {
   name: string;
-  email: string;
+  /** Optional: residents who self-register with a building code sign in by phone instead. */
+  email?: string;
   password: string;
   phone?: string;
   avatar?: string;
@@ -19,9 +20,10 @@ export interface IUser {
 
 export interface IUserDocument extends IUser, Document {
   comparePassword(candidate: string): Promise<boolean>;
-  toSafeJSON(buildingName?: string): Omit<IUser, 'password'> & {
+  toSafeJSON(buildingName?: string, buildingCode?: string): Omit<IUser, 'password'> & {
     id: string;
     buildingName?: string;
+    buildingCode?: string;
   };
 }
 
@@ -30,13 +32,13 @@ const userSchema = new Schema<IUserDocument>(
     name: { type: String, required: true, trim: true },
     email: {
       type: String,
-      required: true,
       unique: true,
+      sparse: true,
       lowercase: true,
       trim: true,
     },
     password: { type: String, required: true, minlength: 6, select: false },
-    phone: { type: String, trim: true },
+    phone: { type: String, trim: true, unique: true, sparse: true },
     avatar: { type: String, trim: true },
     role: {
       type: String,
@@ -62,7 +64,10 @@ userSchema.methods.comparePassword = function comparePassword(candidate: string)
   return bcrypt.compare(candidate, this.password);
 };
 
-userSchema.methods.toSafeJSON = function toSafeJSON(buildingName?: string) {
+userSchema.methods.toSafeJSON = function toSafeJSON(
+  buildingName?: string,
+  buildingCode?: string,
+) {
   return {
     id: this._id.toString(),
     name: this.name,
@@ -73,6 +78,7 @@ userSchema.methods.toSafeJSON = function toSafeJSON(buildingName?: string) {
     unitNumber: this.unitNumber,
     buildingId: this.buildingId,
     buildingName,
+    buildingCode,
     isActive: this.isActive,
     createdAt: this.createdAt,
     updatedAt: this.updatedAt,

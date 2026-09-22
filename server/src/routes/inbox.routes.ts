@@ -10,6 +10,7 @@ import { InboxGroup, IInboxGroupDocument, IInboxGroupMember } from '../models/In
 import { InboxGroupMessage } from '../models/InboxGroupMessage';
 import { AppError } from '../middleware/errorHandler';
 import { AuthRequest, requireAuth } from '../middleware/auth';
+import { sendUserPush, sendUsersPush } from '../utils/push';
 import { ROLE_LABELS, isAppAdmin, isCommittee, UserRole } from '../constants/roles';
 import {
   ensureUploadDirs,
@@ -20,34 +21,68 @@ import {
   storedGroupPath,
   storedChatPath,
 } from '../utils/uploads';
+import {
+  CHAT_ATTACHMENT_MAX_BYTES,
+  chatAttachmentKind,
+  chatAttachmentPlaceholder,
+  chatAttachmentPreview,
+  safeChatExtension,
+} from '../constants/chatAttachments';
 
 const router = Router();
 router.use(requireAuth);
 ensureUploadDirs();
 
-const chatPhotoStorage = multer.diskStorage({
+const chatAttachmentStorage = multer.diskStorage({
   destination: (_req, _file, cb) => {
     ensureUploadDirs();
     cb(null, chatUploadDir);
   },
   filename: (_req, file, cb) => {
-    const ext = path.extname(file.originalname || '').toLowerCase() || '.jpg';
-    const safeExt = ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.heic'].includes(ext) ? ext : '.jpg';
+    const kind = chatAttachmentKind(file.mimetype, file.originalname);
+    const safeExt = safeChatExtension(file.originalname, kind === 'image' ? '.jpg' : '');
     cb(null, `${Date.now()}-${Math.random().toString(36).slice(2, 10)}${safeExt}`);
   },
 });
 
-const chatPhotoUpload = multer({
-  storage: chatPhotoStorage,
-  limits: { fileSize: 5 * 1024 * 1024, files: 1 },
+const chatAttachmentUpload = multer({
+  storage: chatAttachmentStorage,
+  limits: { fileSize: CHAT_ATTACHMENT_MAX_BYTES, files: 1 },
   fileFilter: (_req, file, cb) => {
-    if (!/^image\//i.test(file.mimetype || '')) {
-      cb(new AppError(400, 'Only photos are allowed'));
+    if (!chatAttachmentKind(file.mimetype, file.originalname)) {
+      cb(new AppError(400, 'That file type is not supported'));
       return;
     }
     cb(null, true);
   },
 });
+
+const chatAttachmentFields = chatAttachmentUpload.fields([
+  { name: 'image', maxCount: 1 },
+  { name: 'attachment', maxCount: 1 },
+]);
+
+/** Accepts both the legacy `image` field and the newer `attachment` field. */
+function takeChatUpload(req: AuthRequest): Express.Multer.File | undefined {
+  const files = req.files as Record<string, Express.Multer.File[]> | undefined;
+  if (!files) return undefined;
+  return files.attachment?.[0] ?? files.image?.[0];
+}
+
+function buildChatAttachment(file: Express.Multer.File) {
+  const kind = chatAttachmentKind(file.mimetype, file.originalname) ?? 'file';
+  const name = (file.originalname || '').trim() || `${kind}${path.extname(file.filename)}`;
+  return {
+    attachment: {
+      path: storedChatPath(file.filename),
+      name: name.slice(0, 180),
+      mime: file.mimetype || 'application/octet-stream',
+      size: file.size ?? 0,
+      kind,
+    },
+    kind,
+  };
+}
 
 const groupPhotoStorage = multer.diskStorage({
   destination: (_req, _file, cb) => {
@@ -81,7 +116,7 @@ function groupDto(req: AuthRequest, group: IInboxGroupDocument, actorId: string)
 }
 
 function inboxMessageDto(req: AuthRequest, message: InstanceType<typeof InboxMessage>, actorId: string) {
-  return message.toSafeJSON(actorId, publicFileUrl(req, message.image));
+  return message.toSafeJSON(actorId, (filePath) => publicFileUrl(req, filePath));
 }
 
 function groupMessageDto(
@@ -90,7 +125,7 @@ function groupMessageDto(
   actorId: string,
   memberIds: string[],
 ) {
-  return message.toSafeJSON(actorId, memberIds, publicFileUrl(req, message.image));
+  return message.toSafeJSON(actorId, memberIds, (filePath) => publicFileUrl(req, filePath));
 }
 
 export type InboxCategory = 'committee' | 'resident' | 'guard';
@@ -380,12 +415,12 @@ router.get('/threads/:threadId', async (req: AuthRequest, res: Response, next: N
 
 router.post(
   '/threads/:threadId/messages',
-  chatPhotoUpload.single('image'),
+  chatAttachmentFields,
   async (req: AuthRequest, res: Response, next: NextFunction) => {
+    const file = takeChatUpload(req);
     try {
       const actor = req.user!;
       const text = String(req.body.text ?? '').trim();
-      const file = req.file;
       if (text.length < 1 && !file) throw new AppError(400, 'Message cannot be empty');
 
       const thread = await loadThreadForActor(String(req.params.threadId), actor.userId, actor.role);
@@ -395,20 +430,29 @@ router.post(
 
       const poster = await User.findById(actor.userId);
       const senderName = poster?.name?.trim() || 'Resident';
-      const image = file ? storedChatPath(file.filename) : undefined;
+      const upload = file ? buildChatAttachment(file) : undefined;
       const message = await InboxMessage.create({
         threadId: thread._id.toString(),
         senderId: actor.userId,
         senderName,
-        text: text || (image ? 'Sent a photo' : ''),
-        image,
+        text: text || (upload ? chatAttachmentPlaceholder(upload.kind) : ''),
+        attachment: upload?.attachment,
       });
 
-      thread.lastMessage = text || 'Photo';
+      thread.lastMessage = text || (upload ? chatAttachmentPreview(upload.kind) : '');
       thread.lastMessageAt = message.createdAt;
+      const recipientId = actor.userId === thread.userA ? thread.userB : thread.userA;
       if (actor.userId === thread.userA) thread.userBUnread = 1;
       else thread.userAUnread = 1;
       await thread.save();
+
+      void sendUserPush({
+        userId: recipientId,
+        title: senderName,
+        body: thread.lastMessage || 'Sent you a message',
+        channelId: 'messages',
+        data: { type: 'message', tab: 'inbox', threadId: thread._id.toString() },
+      });
 
       res.status(201).json({
         success: true,
@@ -418,7 +462,7 @@ router.post(
         },
       });
     } catch (error) {
-      if (req.file) await fs.promises.unlink(req.file.path).catch(() => undefined);
+      if (file) await fs.promises.unlink(file.path).catch(() => undefined);
       next(error);
     }
   },
@@ -612,31 +656,39 @@ router.post('/groups/:groupId/members', async (req: AuthRequest, res: Response, 
 
 router.post(
   '/groups/:groupId/messages',
-  chatPhotoUpload.single('image'),
+  chatAttachmentFields,
   async (req: AuthRequest, res: Response, next: NextFunction) => {
+    const file = takeChatUpload(req);
     try {
       const actor = req.user!;
       const text = String(req.body.text ?? '').trim();
-      const file = req.file;
       if (text.length < 1 && !file) throw new AppError(400, 'Message cannot be empty');
 
       const group = await loadGroupForActor(String(req.params.groupId), actor.userId, actor.role);
       const poster = await User.findById(actor.userId);
       const senderName = poster?.name?.trim() || 'Resident';
-      const image = file ? storedChatPath(file.filename) : undefined;
+      const upload = file ? buildChatAttachment(file) : undefined;
       const message = await InboxGroupMessage.create({
         groupId: group._id.toString(),
         senderId: actor.userId,
         senderName,
-        text: text || (image ? 'Sent a photo' : ''),
-        image,
+        text: text || (upload ? chatAttachmentPlaceholder(upload.kind) : ''),
+        attachment: upload?.attachment,
         seenBy: [actor.userId],
       });
 
-      group.lastMessage = text || 'Photo';
+      group.lastMessage = text || (upload ? chatAttachmentPreview(upload.kind) : '');
       group.lastMessageAt = message.createdAt;
       group.unreadIds = group.memberIds.filter((id) => id !== actor.userId);
       await group.save();
+
+      void sendUsersPush({
+        userIds: group.unreadIds,
+        title: group.name,
+        body: `${senderName}: ${group.lastMessage || 'Sent a message'}`,
+        channelId: 'messages',
+        data: { type: 'message', tab: 'groups', groupId: group._id.toString() },
+      });
 
       res.status(201).json({
         success: true,
@@ -646,7 +698,7 @@ router.post(
         },
       });
     } catch (error) {
-      if (req.file) await fs.promises.unlink(req.file.path).catch(() => undefined);
+      if (file) await fs.promises.unlink(file.path).catch(() => undefined);
       next(error);
     }
   },
