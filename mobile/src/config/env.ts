@@ -2,6 +2,7 @@ import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 
 const API_PORT = 3001;
+const PRODUCTION_API = 'http://64.176.81.197:3011/api/v1';
 
 function lanHostFromUri(value?: string): string | null {
   if (!value) return null;
@@ -10,9 +11,15 @@ function lanHostFromUri(value?: string): string | null {
   return host;
 }
 
+function isUsableApiUrl(value?: string | null): value is string {
+  const url = String(value || '').trim();
+  return Boolean(url) && !url.includes('localhost') && !url.includes('127.0.0.1');
+}
+
 /**
- * On a physical phone, "localhost" is the phone itself.
- * Prefer Expo's Metro host so login keeps working when the PC's LAN IP changes.
+ * Prefer an explicit public API (env / app.json) so Expo Go matches live admin-web.
+ * Only fall back to the Metro LAN host when no production URL is configured —
+ * otherwise Trial length and other platform settings diverge from the VPS.
  */
 function resolveDevApiUrl(): string {
   const expoAny = Constants as {
@@ -21,6 +28,30 @@ function resolveDevApiUrl(): string {
     manifest?: { debuggerHost?: string };
   };
 
+  const fromEnv = process.env.EXPO_PUBLIC_API_URL?.trim();
+  if (fromEnv) {
+    // Explicit override wins in Expo Go (local LAN or production).
+    if (isUsableApiUrl(fromEnv) || fromEnv.includes('localhost') || fromEnv.includes('127.0.0.1')) {
+      // Physical device cannot use localhost — rewrite to Metro LAN host if needed.
+      if (fromEnv.includes('localhost') || fromEnv.includes('127.0.0.1')) {
+        const metroHost = lanHostFromUri(
+          expoAny.expoConfig?.hostUri ??
+            expoAny.manifest2?.extra?.expoGo?.debuggerHost ??
+            expoAny.manifest?.debuggerHost,
+        );
+        if (metroHost) {
+          return `http://${metroHost}:${API_PORT}/api/v1`;
+        }
+      }
+      return fromEnv;
+    }
+  }
+
+  const extraUrl = expoAny.expoConfig?.extra?.apiUrl?.trim();
+  if (isUsableApiUrl(extraUrl)) {
+    return extraUrl;
+  }
+
   const metroHost = lanHostFromUri(
     expoAny.expoConfig?.hostUri ??
       expoAny.manifest2?.extra?.expoGo?.debuggerHost ??
@@ -28,16 +59,6 @@ function resolveDevApiUrl(): string {
   );
   if (metroHost) {
     return `http://${metroHost}:${API_PORT}/api/v1`;
-  }
-
-  const fromEnv = process.env.EXPO_PUBLIC_API_URL;
-  if (fromEnv && !fromEnv.includes('localhost') && !fromEnv.includes('127.0.0.1')) {
-    return fromEnv;
-  }
-
-  const extraUrl = expoAny.expoConfig?.extra?.apiUrl;
-  if (extraUrl && !extraUrl.includes('localhost') && !extraUrl.includes('127.0.0.1')) {
-    return extraUrl;
   }
 
   if (Platform.OS === 'android') {
@@ -50,15 +71,12 @@ function resolveDevApiUrl(): string {
 function resolveApiUrl(): string {
   const extraUrl = (Constants as { expoConfig?: { extra?: { apiUrl?: string } } }).expoConfig
     ?.extra?.apiUrl;
-  const fromEnv = process.env.EXPO_PUBLIC_API_URL;
+  const fromEnv = process.env.EXPO_PUBLIC_API_URL?.trim();
 
   if (!__DEV__) {
-    if (fromEnv && !fromEnv.includes('localhost') && !fromEnv.includes('127.0.0.1')) {
-      return fromEnv;
-    }
-    if (extraUrl && !extraUrl.includes('localhost') && !extraUrl.includes('127.0.0.1')) {
-      return extraUrl;
-    }
+    if (isUsableApiUrl(fromEnv)) return fromEnv;
+    if (isUsableApiUrl(extraUrl)) return extraUrl;
+    return PRODUCTION_API;
   }
 
   return resolveDevApiUrl();
