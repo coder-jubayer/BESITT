@@ -46,7 +46,8 @@ export function buildingCanWrite(building: IBuildingDocument): boolean {
 
 export function toBuildingAccessInfo(building: IBuildingDocument): BuildingAccessInfo {
   refreshBuildingAccess(building);
-  const status = building.accessStatus || 'active';
+  // Missing status must stay locked — defaulting to active hid the trial popup.
+  const status = building.accessStatus || 'locked';
   const canWrite = status === 'trial' || status === 'active';
 
   return {

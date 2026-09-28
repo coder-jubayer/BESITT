@@ -102,12 +102,19 @@ export function BuildingAccessChrome() {
         fetchPlatformSettings(),
       ]);
       setLivePlatform(settings);
-      setUser({
-        ...next,
-        platform: settings,
-      });
 
-      const nextLocked = Boolean(next.buildingAccess) && !next.buildingAccess!.canWrite;
+      // Never drop buildingAccess if /auth/me omits it (older API / partial payload).
+      const merged = {
+        ...next,
+        buildingAccess: next.buildingAccess ?? user?.buildingAccess,
+        platform: settings,
+      };
+      setUser(merged);
+
+      const accessInfo = merged.buildingAccess;
+      if (!accessInfo) return;
+
+      const nextLocked = !accessInfo.canWrite;
       if (nextLocked) {
         schedulePopup();
       } else {
@@ -116,9 +123,10 @@ export function BuildingAccessChrome() {
         setPanelOpen(false);
       }
     } catch {
-      // keep cached access
+      // keep cached access — still show popup if we already know we're locked
+      if (locked) schedulePopup();
     }
-  }, [setUser, schedulePopup]);
+  }, [setUser, schedulePopup, user?.buildingAccess, locked]);
 
   useEffect(() => {
     if (!isAuthenticated || !user?.buildingId) return;
@@ -138,6 +146,11 @@ export function BuildingAccessChrome() {
       clearDelay();
     };
   }, [isAuthenticated, user?.buildingId, syncAccess]);
+
+  // Signup/login payloads already include buildingAccess — don't wait on sync to open.
+  useEffect(() => {
+    if (locked) schedulePopup();
+  }, [locked, schedulePopup]);
 
   useEffect(() => {
     return subscribeActivationPopup(() => {
