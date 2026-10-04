@@ -1194,25 +1194,40 @@ table.data tr:hover td {
 }
 
 .building-access-activate {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 12px 14px;
-  align-items: end;
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: flex-end;
+  gap: 12px;
 }
 
 .building-access-activate-field {
+  flex: 1 1 auto;
   min-width: 0;
 }
 
 .building-access-activate-btn {
+  flex: 0 0 auto;
   display: flex;
-  align-items: flex-end;
-  padding-bottom: 1px;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+
+/* Match Input label height so the button lines up with the text field */
+.building-access-activate-btn::before {
+  content: '\00a0';
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.2;
+  margin-bottom: 6px;
+  visibility: hidden;
 }
 
 .building-access-activate-btn .btn {
   white-space: nowrap;
   min-height: 44px;
+  width: auto;
 }
 
 .building-access-secondary {
@@ -1550,14 +1565,6 @@ table.data.buildings-table .user-count-cards {
     grid-template-columns: 1fr;
   }
 
-  .building-access-activate {
-    grid-template-columns: 1fr;
-  }
-
-  .building-access-activate-btn .btn {
-    width: 100%;
-  }
-
   .overview-access-stats .stat-card {
     min-height: 0;
   }
@@ -1687,6 +1694,19 @@ table.data.buildings-table .user-count-cards {
 
   .chips.report-roles {
     grid-template-columns: 1fr;
+  }
+
+  .building-access-activate {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .building-access-activate-btn::before {
+    display: none;
+  }
+
+  .building-access-activate-btn .btn {
+    width: 100%;
   }
 
   .btn {
