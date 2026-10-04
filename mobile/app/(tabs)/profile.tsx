@@ -333,12 +333,14 @@ export default function ProfileScreen() {
               <Button
                 title="Cancel"
                 variant="outline"
+                bypassBuildingLock
                 onPress={() => setLogoutOpen(false)}
                 style={{ flex: 1 }}
               />
               <Button
                 title="Log Out"
                 variant="danger"
+                bypassBuildingLock
                 loading={loggingOut}
                 onPress={handleLogout}
                 style={{ flex: 1 }}

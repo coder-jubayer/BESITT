@@ -2,7 +2,7 @@ from PIL import Image
 from pathlib import Path
 
 root = Path(r"F:\WORKSPACE\MEGA PROJECTS\BUILDING MANAGMENT")
-src = Image.open(root / "no background logo.png").convert("RGBA")
+src = Image.open(root / "Barighorr Logo.png").convert("RGBA")
 assets = root / "mobile" / "assets"
 assets.mkdir(exist_ok=True)
 
@@ -70,18 +70,9 @@ for y in range(mono_base.height):
             pixels[x, y] = (v, v, v, a if v else 0)
 mono_base.save(assets / "android-icon-monochrome.png", "PNG", optimize=True)
 
-in_app = fit_on_canvas(logo, 1024, scale=0.9, bg=(0, 0, 0, 0))
-opaque = [(r, g, b, a) for r, g, b, a in in_app.getdata() if a > 20]
-avg = sum((r + g + b) / 3 for r, g, b, a in opaque) / len(opaque) if opaque else 128
-print("in-app avg luma", round(avg, 1))
-if avg > 160:
-    px = in_app.load()
-    for y in range(in_app.height):
-        for x in range(in_app.width):
-            r, g, b, a = px[x, y]
-            if a > 10:
-                px[x, y] = (255 - r, 255 - g, 255 - b, a)
-in_app.save(assets / "logo.png", "PNG", optimize=True)
+# Keep the official black Barighorr mark for in-app / auth screens.
+in_app = fit_on_canvas(logo, 1024, scale=0.92, bg=(0, 0, 0, 255))
+in_app.convert("RGB").save(assets / "logo.png", "PNG", optimize=True)
 
 fit_on_canvas(logo, 48, scale=0.85, bg=(0, 0, 0, 255)).convert("RGB").save(
     assets / "favicon.png", "PNG"

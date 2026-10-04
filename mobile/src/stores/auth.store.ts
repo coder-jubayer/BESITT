@@ -115,7 +115,11 @@ export const useAuthStore = create<AuthStore>((set) => ({
   },
 
   logout: async () => {
-    await unregisterPushToken();
+    try {
+      await unregisterPushToken();
+    } catch {
+      // Still clear the local session if the API call fails (e.g. locked building).
+    }
     await SecureStore.deleteItemAsync(TOKEN_KEY);
     setAuthToken(null);
     useGuestsStore.getState().reset();
