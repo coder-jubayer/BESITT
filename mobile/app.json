@@ -81,7 +81,7 @@
       "typedRoutes": false
     },
     "extra": {
-      "apiUrl": "http://64.176.81.197:3011/api/v1",
+      "apiUrl": "https://api.barighorr.com/api/v1",
       "router": {},
       "eas": {
         "projectId": "1cbe49f9-c6ee-459d-860a-401feba94d9d"

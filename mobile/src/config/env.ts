@@ -2,7 +2,7 @@ import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 
 const API_PORT = 3001;
-const PRODUCTION_API = 'http://64.176.81.197:3011/api/v1';
+const PRODUCTION_API = 'https://api.barighorr.com/api/v1';
 
 function lanHostFromUri(value?: string): string | null {
   if (!value) return null;
