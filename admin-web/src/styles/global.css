@@ -1188,16 +1188,31 @@ table.data tr:hover td {
 }
 
 .building-access-actions {
-  display: grid;
-  grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.8fr);
-  gap: 16px;
-  align-items: end;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
 }
 
 .building-access-activate {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px 14px;
+  align-items: end;
+}
+
+.building-access-activate-field {
+  min-width: 0;
+}
+
+.building-access-activate-btn {
   display: flex;
-  flex-direction: column;
-  gap: 12px;
+  align-items: flex-end;
+  padding-bottom: 1px;
+}
+
+.building-access-activate-btn .btn {
+  white-space: nowrap;
+  min-height: 44px;
 }
 
 .building-access-secondary {
@@ -1205,7 +1220,8 @@ table.data tr:hover td {
   flex-wrap: wrap;
   gap: 12px;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: flex-start;
+  padding-top: 2px;
 }
 
 .building-access-msg {
@@ -1530,9 +1546,16 @@ table.data.buildings-table .user-count-cards {
   .stats,
   .overview-access-stats,
   .overview-charts,
-  .building-stat-grid,
-  .building-access-actions {
+  .building-stat-grid {
     grid-template-columns: 1fr;
+  }
+
+  .building-access-activate {
+    grid-template-columns: 1fr;
+  }
+
+  .building-access-activate-btn .btn {
+    width: 100%;
   }
 
   .overview-access-stats .stat-card {

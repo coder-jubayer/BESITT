@@ -43,8 +43,8 @@ function trialLengthLabel(days?: number) {
 }
 
 /**
- * Locked / expired buildings: circular lock (top-right) + centered activation popup.
- * Popup opens after a short delay, when the lock is tapped, or when a write action is blocked.
+ * Locked / expired: compact lock chip (top-center) + activation popup.
+ * Active trial: same spot shows remaining days (does not span the header).
  */
 export function BuildingAccessChrome() {
   const insets = useSafeAreaInsets();
@@ -192,17 +192,20 @@ export function BuildingAccessChrome() {
 
   if (!isAuthenticated || !user?.buildingId) return null;
 
+  const chipTop = { top: insets.top + 6 };
+
+  // Active free trial — compact top-center chip (same slot as the lock).
   if (status === 'trial' && canWrite) {
     const days = access?.trialDaysRemaining ?? 0;
-    const granted = Number(access?.trialDaysGranted) || 0;
-    const plan = granted > 0 ? trialLengthLabel(granted) : null;
     return (
-      <View style={[styles.banner, { top: insets.top + 8 }]} pointerEvents="box-none">
-        <View style={styles.bannerInner}>
-          <Ionicons name="time-outline" size={15} color={colors.primary} />
-          <Text style={styles.bannerText}>
-            Free trial · {days} day{days === 1 ? '' : 's'} left
-            {plan ? ` · started as ${plan}` : ''}
+      <View style={[styles.chipAnchor, chipTop]} pointerEvents="box-none">
+        <View style={styles.trialChip} accessibilityLabel={`Free trial, ${days} days left`}>
+          <View style={styles.trialChipIcon}>
+            <Ionicons name="gift" size={12} color={colors.white} />
+          </View>
+          <Text style={styles.trialChipLabel}>Free trial</Text>
+          <Text style={styles.trialChipDays}>
+            {days}d left
           </Text>
         </View>
       </View>
@@ -224,22 +227,21 @@ export function BuildingAccessChrome() {
   return (
     <>
       {!panelOpen ? (
-        <Pressable
-          style={[
-            styles.lockFab,
-            {
-              top: insets.top + 10,
-              right: spacing.md,
-            },
-          ]}
-          onPress={() => {
-            openPanel();
-            void syncAccess();
-          }}
-          accessibilityLabel="Building locked — activation required"
-        >
-          <Ionicons name="lock-closed" size={20} color={colors.white} />
-        </Pressable>
+        <View style={[styles.chipAnchor, chipTop]} pointerEvents="box-none">
+          <Pressable
+            style={({ pressed }) => [styles.lockChip, pressed && styles.lockChipPressed]}
+            onPress={() => {
+              openPanel();
+              void syncAccess();
+            }}
+            accessibilityLabel="Building locked — activation required"
+          >
+            <View style={styles.lockChipIcon}>
+              <Ionicons name="lock-closed" size={14} color={colors.white} />
+            </View>
+            <Text style={styles.lockChipText}>Locked</Text>
+          </Pressable>
+        </View>
       ) : null}
 
       <Modal
@@ -326,38 +328,73 @@ export function BuildingAccessChrome() {
 }
 
 const styles = StyleSheet.create({
-  banner: {
+  chipAnchor: {
     position: 'absolute',
-    left: spacing.md,
-    right: spacing.md,
-    zIndex: 50,
+    left: 0,
+    right: 0,
+    zIndex: 70,
     alignItems: 'center',
   },
-  bannerInner: {
+  lockChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 6,
+    backgroundColor: '#0F172A',
+    paddingLeft: 6,
+    paddingRight: 12,
+    paddingVertical: 5,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.14)',
+    ...shadows.sm,
+  },
+  lockChipPressed: { opacity: 0.9, transform: [{ scale: 0.98 }] },
+  lockChipIcon: {
+    width: 26,
+    height: 26,
+    borderRadius: 8,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  lockChipText: {
+    color: colors.white,
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.2,
+  },
+  trialChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
     backgroundColor: colors.primaryLight,
     borderWidth: 1,
     borderColor: colors.primaryMuted,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: borderRadius.full,
+    paddingLeft: 5,
+    paddingRight: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
     ...shadows.sm,
   },
-  bannerText: { ...typography.bodySmall, color: colors.primary, fontWeight: '700' },
-  lockFab: {
-    position: 'absolute',
-    zIndex: 70,
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#0F172A',
+  trialChipIcon: {
+    width: 22,
+    height: 22,
+    borderRadius: 7,
+    backgroundColor: colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.12)',
-    ...shadows.md,
+  },
+  trialChipLabel: {
+    ...typography.caption,
+    color: colors.primary,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+  },
+  trialChipDays: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: colors.text,
   },
   modalRoot: {
     flex: 1,

@@ -275,30 +275,34 @@ export function BuildingDetailPage() {
               <div className="building-access-actions">
                 {accessStatus !== 'active' ? (
                   <div className="building-access-activate">
-                    <Input
-                      label="Activation days (optional)"
-                      value={activateDays}
-                      onChange={(e) => setActivateDays(e.target.value)}
-                      placeholder="365 — leave blank for open-ended"
-                    />
-                    <Button
-                      loading={accessBusy}
-                      onClick={() => {
-                        const days = Number(activateDays);
-                        void updateAccess({
-                          accessStatus: 'active',
-                          ...(Number.isFinite(days) && days > 0 ? { days } : {}),
-                        });
-                      }}
-                    >
-                      <Unlock size={16} strokeWidth={2} />
-                      Activate building
-                    </Button>
+                    <div className="building-access-activate-field">
+                      <Input
+                        label="Activation days (optional)"
+                        value={activateDays}
+                        onChange={(e) => setActivateDays(e.target.value)}
+                        placeholder="365 — leave blank for open-ended"
+                      />
+                    </div>
+                    <div className="building-access-activate-btn">
+                      <Button
+                        loading={accessBusy}
+                        onClick={() => {
+                          const days = Number(activateDays);
+                          void updateAccess({
+                            accessStatus: 'active',
+                            ...(Number.isFinite(days) && days > 0 ? { days } : {}),
+                          });
+                        }}
+                      >
+                        <Unlock size={16} strokeWidth={2} />
+                        Activate building
+                      </Button>
+                    </div>
                   </div>
                 ) : null}
 
-                <div className="building-access-secondary">
-                  {accessStatus !== 'locked' ? (
+                {accessStatus !== 'locked' ? (
+                  <div className="building-access-secondary">
                     <Button
                       variant="outline"
                       loading={accessBusy}
@@ -307,18 +311,18 @@ export function BuildingDetailPage() {
                       <Lock size={16} strokeWidth={2} />
                       Lock building
                     </Button>
-                  ) : null}
-                  {accessStatus === 'active' || accessStatus === 'trial' ? (
-                    <button
-                      type="button"
-                      className="linkish"
-                      disabled={accessBusy}
-                      onClick={() => void updateAccess({ accessStatus: 'expired' })}
-                    >
-                      Mark as expired
-                    </button>
-                  ) : null}
-                </div>
+                    {accessStatus === 'active' || accessStatus === 'trial' ? (
+                      <button
+                        type="button"
+                        className="linkish"
+                        disabled={accessBusy}
+                        onClick={() => void updateAccess({ accessStatus: 'expired' })}
+                      >
+                        Mark as expired
+                      </button>
+                    ) : null}
+                  </div>
+                ) : null}
               </div>
 
               {accessMsg ? <div className="building-access-msg">{accessMsg}</div> : null}
