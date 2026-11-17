@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "297805113531",
+    "project_id": "barighor-31323",
+    "storage_bucket": "barighor-31323.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:297805113531:android:6aab7c39c81b468fff619e",
+        "android_client_info": {
+          "package_name": "com.barighorr.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBKzmoTZovR4QSzcQ0Al6xWF7qapXIXubw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

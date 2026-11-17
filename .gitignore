@@ -11,6 +11,7 @@ deploy/.env
 google-play-key.json
 GoogleService-Info.plist
 google-services.json
+!mobile/google-services.json
 
 # Expo / React Native
 .expo/
