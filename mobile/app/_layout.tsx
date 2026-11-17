@@ -63,10 +63,12 @@ function AuthGate({ children }: { children: React.ReactNode }) {
     return () => unsubscribe?.();
   }, [isAuthenticated, router]);
 
+  const inAuthGroup = segments[0] === '(auth)';
+
   return (
     <View style={styles.gate}>
       {children}
-      {!isHydrated ? (
+      {!isHydrated && !inAuthGroup ? (
         <View style={styles.boot}>
           <ActivityIndicator size="large" color={colors.primary} />
         </View>

@@ -28,11 +28,13 @@
     },
     "android": {
       "package": "com.barighorr.app",
+      "googleServicesFile": "./google-services.json",
       "versionCode": 1,
       "usesCleartextTraffic": true,
       "permissions": [
         "INTERNET",
-        "ACCESS_NETWORK_STATE"
+        "ACCESS_NETWORK_STATE",
+        "POST_NOTIFICATIONS"
       ],
       "backgroundColor": "#FFFFFF",
       "adaptiveIcon": {
