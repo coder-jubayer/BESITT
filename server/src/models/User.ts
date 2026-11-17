@@ -13,6 +13,7 @@ export interface IUser {
   unitNumber?: string;
   buildingId?: string;
   expoPushToken?: string;
+  fcmToken?: string;
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -49,6 +50,7 @@ const userSchema = new Schema<IUserDocument>(
     unitNumber: { type: String, trim: true },
     buildingId: { type: String, trim: true },
     expoPushToken: { type: String, trim: true, select: false },
+    fcmToken: { type: String, trim: true, select: false },
     isActive: { type: Boolean, default: true },
   },
   { timestamps: true },

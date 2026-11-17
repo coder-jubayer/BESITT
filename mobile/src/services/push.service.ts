@@ -40,6 +40,7 @@ async function ensureAndroidChannels(Notifications: NotificationsModule): Promis
     { id: 'notices', name: 'Notices' },
     { id: 'guests', name: 'Guest requests' },
     { id: 'messages', name: 'Messages' },
+    { id: 'tickets', name: 'Tickets' },
   ];
 
   await Promise.all(
@@ -100,12 +101,8 @@ async function resolvePushToken(Notifications: NotificationsModule): Promise<str
   }
   if (status !== 'granted') return null;
 
-  const projectId =
-    Constants.expoConfig?.extra?.eas?.projectId ?? Constants.easConfig?.projectId;
-  if (!projectId) return null;
-
-  const token = await Notifications.getExpoPushTokenAsync({ projectId });
-  return token.data || null;
+  const device = await Notifications.getDevicePushTokenAsync();
+  return typeof device?.data === 'string' && device.data.length > 0 ? device.data : null;
 }
 
 export async function registerPushToken(): Promise<void> {

@@ -50,6 +50,7 @@ services:
       SEED_DEMO: ${SEED_DEMO:-false}
       ADMIN_EMAIL: ${ADMIN_EMAIL:-}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      FIREBASE_SERVICE_ACCOUNT_B64: ${FIREBASE_SERVICE_ACCOUNT_B64:-}
     ports:
       - "${API_HOST_PORT:-3011}:3001"
     volumes:

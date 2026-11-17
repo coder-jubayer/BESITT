@@ -195,7 +195,7 @@ export default function MessagesScreen() {
         fetchInboxGroups(),
       ]);
       setMarketThreads(sortByRecency(market));
-      setInboxThreads(sortInbox(inbox.filter((thread) => thread.pinned || Boolean(thread.lastMessage))));
+      setInboxThreads(sortInbox(inbox));
       setGroups(sortByRecency(groupList));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load messages');
@@ -237,11 +237,7 @@ export default function MessagesScreen() {
         unread: 0,
         pinned: Boolean(thread.pinned || existing?.pinned),
       };
-      return sortInbox(
-        [next, ...current.filter((item) => item.id !== thread.id)].filter(
-          (item) => item.pinned || Boolean(item.lastMessage),
-        ),
-      );
+      return sortInbox([next, ...current.filter((item) => item.id !== thread.id)]);
     });
   };
 
@@ -991,7 +987,7 @@ export default function MessagesScreen() {
                   </View>
                   <Text style={styles.rowSub}>{roleLabel(thread.otherRole)}</Text>
                   <Text style={styles.rowMsg} numberOfLines={1}>
-                    {thread.lastMessage || (thread.pinned ? 'Building admin' : 'Say hello')}
+                    {thread.lastMessage || (thread.pinned ? 'Building admin' : 'No messages yet')}
                   </Text>
                 </View>
                 {thread.unread > 0 ? (

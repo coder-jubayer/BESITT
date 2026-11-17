@@ -145,11 +145,6 @@ function inboxThreadDto(
   };
 }
 
-function isPinnedAdminThread(thread: IInboxThreadDocument, actorId: string, actorRole: string) {
-  const otherRole = thread.userA === actorId ? thread.userBRole : thread.userARole;
-  return isCommittee(actorRole) && otherRole === 'building_admin';
-}
-
 async function ensureCommitteeAdminThreads(actor: { userId: string; role: string; buildingId?: string }) {
   if (!isCommittee(actor.role) || !actor.buildingId) return;
 
@@ -184,7 +179,7 @@ async function ensureCommitteeAdminThreads(actor: { userId: string; role: string
 }
 
 function inboxCategory(role?: string | null): InboxCategory | null {
-  if (role === 'committee') return 'committee';
+  if (role === 'committee' || role === 'building_admin') return 'committee';
   if (role === 'resident') return 'resident';
   if (role === 'guard') return 'guard';
   return null;
@@ -238,7 +233,7 @@ router.get('/directory', async (req: AuthRequest, res: Response, next: NextFunct
       buildingId,
       isActive: true,
       _id: { $ne: actor.userId },
-      role: { $in: ['committee', 'resident', 'guard'] },
+      role: { $in: ['committee', 'resident', 'guard', 'building_admin'] },
     }).sort({ name: 1 });
 
     const threads = await InboxThread.find({
@@ -321,12 +316,11 @@ router.get('/threads', async (req: AuthRequest, res: Response, next: NextFunctio
     }).limit(250);
 
     const visible = threads
-      .filter((thread) => Boolean(thread.lastMessageAt) || isPinnedAdminThread(thread, actor.userId, actor.role))
       .map((thread) => inboxThreadDto(thread, actor))
       .sort((a, b) => {
         if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
-        const left = a.lastMessageAt ? new Date(a.lastMessageAt).getTime() : 0;
-        const right = b.lastMessageAt ? new Date(b.lastMessageAt).getTime() : 0;
+        const left = new Date(a.lastMessageAt || a.updatedAt || 0).getTime();
+        const right = new Date(b.lastMessageAt || b.updatedAt || 0).getTime();
         return right - left;
       })
       .slice(0, 200);

@@ -54,6 +54,8 @@ function AuthGate({ children }: { children: React.ReactNode }) {
             ...(data.groupId ? { groupId: data.groupId } : {}),
           },
         } as never);
+      } else if (data?.type === 'ticket') {
+        router.push('/complaints');
       } else {
         router.push('/notices');
       }

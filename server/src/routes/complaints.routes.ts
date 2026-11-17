@@ -9,6 +9,7 @@ import { User } from '../models/User';
 import { AppError } from '../middleware/errorHandler';
 import { AuthRequest, requireAuth, requireComplaintCreator } from '../middleware/auth';
 import { canCreateComplaint, canManageComplaints, isAppAdmin } from '../constants/roles';
+import { sendBuildingStaffPush, sendUserPush } from '../utils/push';
 import {
   COMPLAINT_CATEGORIES,
   COMPLAINT_CATEGORY_VALUES,
@@ -232,6 +233,15 @@ router.post(
         unitNumber: poster?.unitNumber,
       });
 
+      void sendBuildingStaffPush({
+        buildingId,
+        excludeUserId: actor.userId,
+        title: 'New ticket',
+        body: `${complaint.createdByName}: ${complaint.title}`,
+        channelId: 'tickets',
+        data: { type: 'ticket', complaintId: complaint._id.toString() },
+      });
+
       res.status(201).json({
         success: true,
         message: 'Ticket submitted',
@@ -315,6 +325,19 @@ router.patch('/:id', async (req: AuthRequest, res: Response, next: NextFunction)
       });
     }
 
+    if (complaint.createdBy !== actor.userId) {
+      const body = nextStatus
+        ? `Status: ${complaintStatusLabel(nextStatus)}`
+        : `${authorName} commented on ${complaint.title}`;
+      void sendUserPush({
+        userId: complaint.createdBy,
+        title: complaint.title,
+        body,
+        channelId: 'tickets',
+        data: { type: 'ticket', complaintId: complaint._id.toString() },
+      });
+    }
+
     const [comments, reporters] = await Promise.all([
       ComplaintComment.find({ complaintId: complaint._id.toString() }).sort({ createdAt: 1 }),
       reportersByIds([complaint.createdBy]),
@@ -361,6 +384,26 @@ router.post(
         text: text || (media[0]?.kind === 'video' ? 'Sent a video' : media.length ? 'Sent a photo' : ''),
         media,
       });
+
+      const preview = comment.text || 'New comment';
+      if (complaint.createdBy === actor.userId) {
+        void sendBuildingStaffPush({
+          buildingId: complaint.buildingId,
+          excludeUserId: actor.userId,
+          title: complaint.title,
+          body: preview,
+          channelId: 'tickets',
+          data: { type: 'ticket', complaintId: complaint._id.toString() },
+        });
+      } else {
+        void sendUserPush({
+          userId: complaint.createdBy,
+          title: complaint.title,
+          body: preview,
+          channelId: 'tickets',
+          data: { type: 'ticket', complaintId: complaint._id.toString() },
+        });
+      }
 
       res.status(201).json({
         success: true,

@@ -265,11 +265,20 @@ router.patch('/push-token', requireAuth, async (req: AuthRequest, res: Response,
       throw new AppError(400, 'Push token is required');
     }
 
-    await User.updateMany(
-      { expoPushToken: token, _id: { $ne: req.user!.userId } },
-      { $unset: { expoPushToken: 1 } },
-    );
-    await User.findByIdAndUpdate(req.user!.userId, { expoPushToken: token });
+    const isExpo = token.startsWith('ExponentPushToken');
+    if (isExpo) {
+      await User.updateMany(
+        { expoPushToken: token, _id: { $ne: req.user!.userId } },
+        { $unset: { expoPushToken: 1 } },
+      );
+      await User.findByIdAndUpdate(req.user!.userId, { expoPushToken: token });
+    } else {
+      await User.updateMany(
+        { fcmToken: token, _id: { $ne: req.user!.userId } },
+        { $unset: { fcmToken: 1 } },
+      );
+      await User.findByIdAndUpdate(req.user!.userId, { fcmToken: token });
+    }
 
     res.json({ success: true, message: 'Push token saved' });
   } catch (error) {
@@ -279,7 +288,7 @@ router.patch('/push-token', requireAuth, async (req: AuthRequest, res: Response,
 
 router.delete('/push-token', requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    await User.findByIdAndUpdate(req.user!.userId, { $unset: { expoPushToken: 1 } });
+    await User.findByIdAndUpdate(req.user!.userId, { $unset: { expoPushToken: 1, fcmToken: 1 } });
     res.json({ success: true, message: 'Push token cleared' });
   } catch (error) {
     next(error);
